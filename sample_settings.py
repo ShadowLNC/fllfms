@@ -25,12 +25,13 @@ FLLFMS = {
         "2",
     ])),
 
-    # Only keep the tournaments you intend to use at an event.
-    # Names are again inspired by FRC.
-    # These should be lowercase for URLs, they will be capitalised on output.
+    # Only keep the tournaments you intend to use at an event. Place them in
+    # in reverse order, so the first tournament is at the bottom of the list.
+    # This is used to sort them automatically. Names are again inspired by FRC.
+    # These should be capitalised as you intend them to appear.
     'TOURNAMENTS': list(enumerate([
-        "playoff",
-        "qualification",
-        "practice",
+        # "Finals",
+        "Ranking",
+        "Practice",
     ]))
 }

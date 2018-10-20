@@ -20,16 +20,25 @@ def bounds(*, low=None, high=None):
 
 class Team(models.Model):
     # Auto PK
-    number = models.PositiveIntegerField(unique=True, validators=bounds(low=1))
-    name = models.CharField(max_length=255, blank=True)  # Name optional.
-    dq = models.BooleanField(default=False)  # If true, team is disqualified.
+    # Number must be editable as it needs to be set during creation in admin.
+    number = models.PositiveIntegerField(unique=True,
+                                         validators=bounds(low=1),
+                                         verbose_name=_("team number"))
+    name = models.CharField(max_length=255, blank=True,
+                            verbose_name=_("team name"))  # Name optional.
+    dq = models.BooleanField(default=False, verbose_name=_("is disqualified?"))
 
     def __repr__(self):
         return "<{}: {}>".format(self.__class__.__name__, self.number)
 
-    __str__ = __repr__  # Override Django's version.
+    # Django admin site representation.
+    def __str__(self):
+        return "{}: {}".format(self.number, self.name)
 
     class Meta:
+        verbose_name = _("team")
+        verbose_name_plural = _("teams")
+
         constraints = [
             models.CheckConstraint(check=Q(number__gte=1),
                                    name="number_minimum"),
@@ -39,24 +48,31 @@ class Team(models.Model):
 class Match(models.Model):
     # Auto PK
     tournament = models.PositiveSmallIntegerField(
-        db_index=True, choices=settings.FLLFMS['TOURNAMENTS'])
+        db_index=True, choices=settings.FLLFMS['TOURNAMENTS'],
+        verbose_name=_("tournament"))
     number = models.PositiveSmallIntegerField(
-        db_index=True, validators=bounds(low=1))
+        db_index=True, validators=bounds(low=1),
+        verbose_name=_("match number"))
 
     # Event-specific data. Teams play at least 3 rounds, per the FLL manual.
     round = models.PositiveSmallIntegerField(
-        db_index=True, validators=bounds(low=1))
-    field = models.PositiveSmallIntegerField(choices=settings.FLLFMS['FIELDS'])
+        db_index=True, validators=bounds(low=1),
+        verbose_name=_("match round"))
+    field = models.PositiveSmallIntegerField(
+        choices=settings.FLLFMS['FIELDS'], verbose_name=_("field/table pair"))
 
     # Timing data.
-    schedule = models.DateTimeField(auto_now=False, auto_now_add=False)
+    schedule = models.DateTimeField(auto_now=False, auto_now_add=False,
+                                    verbose_name=_("scheduled start time"))
     actual = models.DateTimeField(
-        auto_now=False, auto_now_add=False, blank=True, null=True)
+        auto_now=False, auto_now_add=False, blank=True, null=True,
+        verbose_name=_("actual start time"))
 
     # Matches have teams, so m2m goes on matches (appears on Match admin form).
     # related_query_name == related_name, for both sides of the relationship.
     teams = models.ManyToManyField('Team', through='Player',
-                                   related_name="matches")
+                                   related_name="matches",
+                                   verbose_name=_("players"))
 
     def clean(self):
         errs = defaultdict(list)
@@ -66,10 +82,11 @@ class Match(models.Model):
                 team__in=self.teams.all(), match__round=self.round,
                 match__tournament=self.tournament, surrogate=False
                 ).exclude(pk__in=self.players.all()).exists():
-            errs['round'].append(ValidationError(_(
-                "Cannot have more than one match per team, per round, per "
-                "tournament (non-surrogate matches). (It appears you changed "
-                "the match round, which would violate this constraint.)")))
+            errs['round'].append(ValidationError(
+                _("Cannot have more than one match per team, per round, per "
+                  "tournament (non-surrogate matches). (It appears you changed"
+                  " the match round, which would violate this constraint.)"),
+                code="team_too_many_matches"))
 
         if errs:
             raise ValidationError(errs)
@@ -78,9 +95,16 @@ class Match(models.Model):
         return "<{}: {}.{}>".format(self.__class__.__name__,
                                     self.get_tournament_display(), self.number)
 
-    __str__ = __repr__  # Override Django's version.
+    # Django admin site representation.
+    def __str__(self):
+        # Translation can't really be done on the fly for sentence structure.
+        return "{} {} {}".format(self.get_tournament_display(), _("Match"),
+                                 self.number)
 
     class Meta:
+        verbose_name = _("match")
+        verbose_name_plural = _("matches")
+
         unique_together = [
             # Rounds are still part of that tournament.
             ('tournament', 'number'),
@@ -104,28 +128,36 @@ class Match(models.Model):
 class Player(models.Model):
     # Players are teams who play a given match in a given location.
     # Auto PK
+    # Cascase on deletion for the match/team, but scoresheets may block.
     match = models.ForeignKey('Match', on_delete=models.CASCADE,
-                              related_name="players")
+                              related_name="players",
+                              verbose_name=_("match"))
     team = models.ForeignKey('Team', on_delete=models.CASCADE,
-                             related_name="players")
+                             related_name="players",
+                             verbose_name=_("team"))
 
     # Additional data for the relationship.
     station = models.PositiveSmallIntegerField(
-        choices=settings.FLLFMS['STATIONS'])
-    surrogate = models.BooleanField(default=False)  # Might not be used.
+        choices=settings.FLLFMS['STATIONS'], verbose_name=_("station/side"))
+    surrogate = models.BooleanField(default=False,  # Might not be used.
+                                    verbose_name=_("is surrogate?"))
 
     def clean(self):
         errs = defaultdict(list)
 
         # Friendly error for player_round_tournament_uniq.
         # Minor race condition if match round/tournament is changed after load.
-        if Player.objects.filter(
-                team=self.team, match__round=self.match.round,
-                match__tournament=self.match.tournament, surrogate=False
-                ).exclude(pk=self.pk).exists():
-            errs[NON_FIELD_ERRORS].append(ValidationError(_(
-                "Cannot have more than one match per team, per round, per "
-                "tournament (non-surrogate matches).")))
+        # Apparently this runs even if individual field validation fails.
+        if (getattr(self, 'team', None) is not None
+                and getattr(self, 'match', None) is not None
+                and Player.objects.filter(
+                    team=self.team, match__round=self.match.round,
+                    match__tournament=self.match.tournament, surrogate=False
+                    ).exclude(pk=self.pk).exists()):
+            errs[NON_FIELD_ERRORS].append(ValidationError(
+                _("Cannot have more than one match per team, per round, per "
+                  "tournament (non-surrogate matches)."),
+                code="team_too_many_matches"))
 
         if errs:
             raise ValidationError(errs)
@@ -136,9 +168,15 @@ class Player(models.Model):
             self.__class__.__name__, match.get_tournament_display(),
             match.number, self.get_station_display())
 
-    __str__ = __repr__  # Override Django's version.
+    # Django admin site representation.
+    def __str__(self):
+        return "{}, {} {}".format(self.match, _("Station"),
+                                  self.get_station_display())
 
     class Meta:
+        verbose_name = _("player")
+        verbose_name_plural = _("players")
+
         unique_together = [
             ('match', 'station'),
             ('match', 'team'),
