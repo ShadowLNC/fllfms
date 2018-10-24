@@ -150,6 +150,7 @@ class Player(models.Model):
         # Apparently this runs even if individual field validation fails.
         if (getattr(self, 'team', None) is not None
                 and getattr(self, 'match', None) is not None
+                and not self.surrogate
                 and Player.objects.filter(
                     team=self.team, match__round=self.match.round,
                     match__tournament=self.match.tournament, surrogate=False
