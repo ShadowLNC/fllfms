@@ -28,8 +28,12 @@ class Team(models.Model):
                             verbose_name=_("team name"))  # Name optional.
     dq = models.BooleanField(default=False, verbose_name=_("is disqualified?"))
 
-    def __repr__(self):
-        return "<{}: {}>".format(self.__class__.__name__, self.number)
+    def __repr__(self, raw=False):
+        # The raw argument allows for the class name to be omitted.
+        out = str(self.number)
+        if raw:
+            return out
+        return "<{}: {}>".format(self.__class__.__name__, out)
 
     # Django admin site representation.
     def __str__(self):
@@ -91,9 +95,12 @@ class Match(models.Model):
         if errs:
             raise ValidationError(errs)
 
-    def __repr__(self):
-        return "<{}: {}.{}>".format(self.__class__.__name__,
-                                    self.get_tournament_display(), self.number)
+    def __repr__(self, raw=False):
+        # The raw argument allows for the class name to be omitted.
+        out = "{}.{}".format(self.get_tournament_display(), self.number)
+        if raw:
+            return out
+        return "<{}: {}>".format(self.__class__.__name__, out)
 
     # Django admin site representation.
     def __str__(self):
@@ -163,16 +170,19 @@ class Player(models.Model):
         if errs:
             raise ValidationError(errs)
 
-    def __repr__(self):
+    def __repr__(self, raw=False):
         match = getattr(self, 'match', Match())  # Fallback value.
-        return "<{}: {}.{}.{}>".format(
-            self.__class__.__name__, match.get_tournament_display(),
-            match.number, self.get_station_display())
+        out = "{}-{}".format(match.__repr__(raw=True),
+                             self.get_station_display())
+        # The raw argument allows for the class name to be omitted.
+        if raw:
+            return out
+        return "<{}: {}>".format(self.__class__.__name__, out)
 
-    # Django admin site representation.
+    # Django admin site representation. Format is for scoresheet lookup later.
     def __str__(self):
-        return "{}, {} {}".format(self.match, _("Station"),
-                                  self.get_station_display())
+        team = getattr(self, 'team', Team())  # Fallback if missing.
+        return "{}/{}".format(self.__repr__(raw=True), team)
 
     class Meta:
         verbose_name = _("player")

@@ -22,6 +22,7 @@ class ModelTeamTests(TestCase):
             with self.subTest(i=i):
                 t = Team(number=i, name="My Robotics Team", dq=False)
                 with self.assertRaises(ValidationError):
+                    # transaction.atomic required per Django ticket #21540.
                     with transaction.atomic():
                         t.full_clean()
                 with self.assertRaises(IntegrityError):
@@ -39,6 +40,11 @@ class ModelTeamTests(TestCase):
         with self.assertRaises(IntegrityError):
             with transaction.atomic():
                 t2.save()
+
+    def test_empty_repr_str(self):
+        # No need to assert anything as it just verifies no crash.
+        _ = repr(Team())
+        _ = str(Team())
 
 
 class ModelMatchTests(TestCase):
@@ -154,6 +160,11 @@ class ModelMatchTests(TestCase):
         with self.assertRaises(IntegrityError):
             with transaction.atomic():
                 m2.save()
+
+    def test_empty_repr_str(self):
+        # No need to assert anything as it just verifies no crash.
+        _ = repr(Match())
+        _ = str(Match())
 
 
 class ModelPlayerTests(TestCase):
@@ -303,3 +314,8 @@ class ModelPlayerTests(TestCase):
         with self.assertRaises(ValidationError):
             with transaction.atomic():
                 m2.full_clean()
+
+    def test_empty_repr_str(self):
+        # No need to assert anything as it just verifies no crash.
+        _ = repr(Player())
+        _ = str(Player())
