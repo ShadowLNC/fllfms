@@ -1,4 +1,5 @@
 from collections import defaultdict
+from importlib import import_module
 
 from django.conf import settings
 from django.db import models
@@ -6,6 +7,10 @@ from django.db.models import Q
 from django.core.validators import MinValueValidator, MaxValueValidator
 from django.core.exceptions import ValidationError, NON_FIELD_ERRORS
 from django.utils.translation import gettext_lazy as _
+
+
+Scoresheet = import_module(settings.FLLFMS.get(
+    'SCORESHEET', 'fllfms.scoresheets._stub')).Scoresheet
 
 
 def bounds(*, low=None, high=None):
