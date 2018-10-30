@@ -13,6 +13,7 @@ class PlayerAdmin(admin.TabularInline):
 
     # We want to disallow editing the team once set, else scores would move to
     # the new team, so require a new Player instead. Blocked by Django #15602.
+    # In the meantime: clean() checks on model.
     # readonly_fields = tuple()
 
     ordering = ('station',)

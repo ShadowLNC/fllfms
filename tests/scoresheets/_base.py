@@ -17,6 +17,7 @@ class BaseScoresheetTests(TestCase):
         super().setUpTestData()
 
         Team(number=1).save()
+        Team(number=2).save()
 
         Match(tournament=settings.FLLFMS['TOURNAMENTS'][0][0],
               number=1, round=1,
@@ -53,6 +54,7 @@ class BaseScoresheetTests(TestCase):
         s.save()
         self.assertIsNotNone(s.pk)
         self.assertIsNotNone(s.score)  # Check save() sets score.
+        s.full_clean()  # Simulate edit (pk is not None) for clean()/save().
 
     def test_player_onetoone(self):
         s1 = self.with_missions()
@@ -82,6 +84,19 @@ class BaseScoresheetTests(TestCase):
         with self.assertRaises(IntegrityError):
             with transaction.atomic():
                 s.referee.delete()
+
+    def test_player_validate_player_change_team_prohibited_form(self):
+        # See Player.clean for the player_change_team_prohibited error.
+        # Scoresheet would move across to new team, which is bad, so disallow.
+        s = self.with_missions()
+        s.save()
+        self.assertIsNotNone(s.pk)
+        # Swap out the player's team, and verify error occurs.
+        p = s.player
+        p.team = Team.objects.exclude(pk=p.team.pk).first()
+        with self.assertRaises(ValidationError):
+            with transaction.atomic():
+                p.full_clean()
 
     def test_empty_repr_str(self):
         # No need to assert anything as it just verifies no crash.

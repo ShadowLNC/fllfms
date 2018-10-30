@@ -172,6 +172,18 @@ class Player(models.Model):
                   "tournament (non-surrogate matches)."),
                 code="team_too_many_matches"))
 
+        # We want to disallow editing the team once set, else scores would move
+        # to the new team, so require scoresheet deletion first.
+        if (self.pk is not None
+                and getattr(self, 'scoresheet', None) is not None):
+            old = self.__class__.objects.get(pk=self.pk)
+            if getattr(self, 'team', Team()) != old.team:
+                errs['team'].append(ValidationError(
+                    _("Cannot change a player's team once set, as it would "
+                      "transfer scores to the new team. (Delete the "
+                      "scoresheet, then change the team.)"),
+                    code="player_change_team_prohibited"))
+
         if errs:
             raise ValidationError(errs)
 

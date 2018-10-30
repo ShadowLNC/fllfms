@@ -1,5 +1,5 @@
 from datetime import datetime, timezone
-from unittest import skip, skipIf
+from unittest import skipIf
 
 from django.conf import settings
 from django.core.exceptions import ValidationError
@@ -16,6 +16,7 @@ class ModelTeamTests(TestCase):
         t.full_clean()
         t.save()
         self.assertIsNotNone(t.pk)
+        t.full_clean()  # Simulate edit (pk is not None) for clean() checks.
 
     def test_number_constraints(self):
         for i in (-1, 0):
@@ -59,8 +60,8 @@ class ModelMatchTests(TestCase):
         m.full_clean()
         m.save()
         self.assertIsNotNone(m.pk)
+        m.full_clean()  # Simulate edit (pk is not None) for clean() checks.
 
-    @skip("Django bug #29868")
     def test_tournament_constraints(self):
         # 999 is sufficiently large that it should exceed all enum values.
         # It's also less than 32767 which is the max smallint (signed) size.
@@ -79,7 +80,6 @@ class ModelMatchTests(TestCase):
             with transaction.atomic():
                 m.save()
 
-    @skip("Django bug #29868")
     def test_number_constraints(self):
         for i in (-1, 0):
             with self.subTest(i=i):
@@ -98,7 +98,6 @@ class ModelMatchTests(TestCase):
                     with transaction.atomic():
                         m.save()
 
-    @skip("Django bug #29868")
     def test_round_constraints(self):
         for i in (-1, 0):
             with self.subTest(i=i):
@@ -199,6 +198,7 @@ class ModelPlayerTests(TestCase):
         p.full_clean()
         p.save()
         self.assertIsNotNone(p.pk)
+        p.full_clean()  # Simulate edit (pk is not None) for clean() checks.
 
     def test_station_constraints(self):
         # 999 should exceed the max enum value (max smallint is 32767).
@@ -243,7 +243,7 @@ class ModelPlayerTests(TestCase):
             with transaction.atomic():
                 p2.save()
 
-    def test_uniq_together_matchdata_player_form(self):
+    def test_validate_team_too_many_matches_form(self):
         # Constraint: unique_together: (match__round, match__tournament, team)
         # (optionally where surrogate == False)
         # This is basically the same as database one but full_clean vs save.
@@ -269,7 +269,7 @@ class ModelPlayerTests(TestCase):
 
     @skipIf(connection.settings_dict['ENGINE'] == "django.db.backends.sqlite3",
             "Cannot test constraint on SQLite3 databases (no view indexes).")
-    def test_uniq_together_matchdata_player_db(self):
+    def test_validate_team_too_many_matches_db(self):
         # Constraint: unique_together: (match__round, match__tournament, team)
         # (optionally where surrogate == False)
         # We can't enforce this on SQLite, so it's a separate test.
@@ -294,7 +294,7 @@ class ModelPlayerTests(TestCase):
         p2.save()
         self.assertIsNotNone(p2.pk)
 
-    def test_match_uniq_together_matchdata_player_form(self):
+    def test_match_validate_team_too_many_matches_form(self):
         # Constraint: unique_together: (match__round, match__tournament, team)
         # (optionally where surrogate == False)
         # This tests validation on the Match clean, for the Player constraint.
