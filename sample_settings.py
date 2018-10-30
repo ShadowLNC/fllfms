@@ -2,6 +2,7 @@
 
 FLLFMS = {
     'EVENT_NAME': "My FLL Event",
+    'SCORESHEET': 'fllfms.scoresheets._stub',
 
     # ########### WARNING ########### #
     # ONCE YOU HAVE POPULATED YOUR DATABASE
