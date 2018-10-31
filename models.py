@@ -88,8 +88,9 @@ class Match(models.Model):
 
         # Friendly error for player_round_tournament_uniq.
         if self.pk is not None and Player.objects.filter(
-                team__in=self.teams.all(), match__round=self.round,
-                match__tournament=self.tournament, surrogate=False
+                    team__in=self.teams.exclude(players__surrogate=True),
+                    match__round=self.round, match__tournament=self.tournament,
+                    surrogate=False
                 ).exclude(pk__in=self.players.all()).exists():
             errs['round'].append(ValidationError(
                 _("Cannot have more than one match per team, per round, per "
