@@ -9,7 +9,7 @@ from django.db import models
 from django.db.models import Q
 from django.utils.html import format_html
 from django.utils.translation import gettext_lazy as _
-# from django.views.generic import RedirectView
+from django.urls import reverse
 
 from .models import Team, Match, Player, Scoresheet
 
@@ -59,7 +59,8 @@ class SignatureField(forms.Field):
 
 class PlayerAdmin(admin.TabularInline):
     model = Player
-    fields = ('match', 'station', 'team', 'surrogate',)
+    fields = ('match', 'station', 'team', 'surrogate', 'scoresheet_link',)
+    readonly_fields = ('scoresheet_link',)
 
     # We want to disallow editing the team once set, else scores would move to
     # the new team, so require a new Player instead. Blocked by Django #15602.
@@ -67,6 +68,27 @@ class PlayerAdmin(admin.TabularInline):
     # readonly_fields = tuple()
 
     ordering = ('station',)
+
+    def scoresheet_link(self, obj):
+        url_name_data = (self.admin_site.name, Scoresheet._meta.app_label,
+                         Scoresheet._meta.model_name)
+
+        if getattr(obj, 'scoresheet', None) is not None:
+            text = _(
+                "Edit scoresheet... (Score: {})").format(obj.scoresheet.score)
+            url = reverse("{}:{}_{}_change".format(*url_name_data),
+                          args=[obj.scoresheet.pk])
+        elif obj.station is not None and obj.match.actual is not None:
+            # Only allow adding for existing players on a completed match.
+            text = _("Click to add...")
+            # Kinda hacky to prepopulate via querystring, but it works, so...
+            url = (reverse("{}:{}_{}_add".format(*url_name_data)) +
+                   "?player={}".format(obj.pk))
+
+        else:
+            return "-"  # No link for not-yet-created players.
+        return format_html('<a href="{}">{}</a>', url, text)
+    scoresheet_link.short_description = _("scoresheet")
 
     # autocomplete_fields = ('team',)  # Overriden below.
     # Standard autocomplete field won't allow us to clear it once selected. We
@@ -231,12 +253,14 @@ class MatchAdmin(admin.ModelAdmin):
                            "the requested action."),
                 level=messages.ERROR)
 
-    list_display = ('tournament', 'number', 'round',
-                    'field', 'schedule', 'actual',)
+    list_display = (
+        'tournament', 'number', 'round', 'field', 'schedule', 'actual',)
     list_display_links = list_display[:2]
     list_editable = list_display[2:]
     list_filter = ('tournament', 'round', 'field',
                    MatchCompleteFilter, StationCountFilter,)
+    ordering = ('-tournament', 'number',)
+    fields = list_display
 
     def get_actions(self, request):
         actions = super().get_actions(request)
@@ -249,8 +273,6 @@ class MatchAdmin(admin.ModelAdmin):
             actions['empty'] = (self.__class__.empty, 'empty',
                                 _("Delete all players from selected matches"))
         return actions
-
-    ordering = ('-tournament', 'number',)
 
     inlines = [
         PlayerAdmin,
