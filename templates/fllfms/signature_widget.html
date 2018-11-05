@@ -1,0 +1,19 @@
+{% load i18n %}
+
+{% if not widget.attrs.disabled %}{# If missing attr, bool(None) == False. #}
+    <!-- The parent div must be slightly larger but still fill maximum, so 26>25.
+    Otherwise it won't auto-expand unless forced to redraw by (un)wrapping. -->
+    <div class="signature-pad" style="display:inline-block; width:26em;">
+        <div style="display:block; box-sizing: border-box; position:relative; top:0; left:0; border-radius: 0.3em; border: 1px solid #ccc; width:100%; max-width:25em; height:10em;">
+            <canvas style="width: 100%; height: 100%;"></canvas>
+            <div style="position:absolute; top:0; left:0; width:100%; height:100%; background-image:linear-gradient(-45deg,rgba(255,255,255,.15) 25%,transparent 25%,transparent 50%,rgba(255,255,255,.15) 50%,rgba(255,255,255,.15) 75%,transparent 75%,transparent); background-size: 1em 1em; font-size: 2em; background-color:#0006; color:#fff; text-align:center; display:none; flex-direction: column; justify-content: center; font-weight:bold;">
+                {% trans "Press clear to redraw" %}</div>
+        </div>
+        <div>
+            <button style="appearance:button; -webkit-appearance:button; -moz-appearance:button;" type="button">{% trans "Clear" %}</button>
+            <input type="hidden" name="{{ widget.name }}" value="{{ widget.value }}" {% include "django/forms/widgets/attrs.html" %}>
+        </div>
+    </div>
+{% else %}
+    <img src="data:image/png;base64,{{ widget.value }}">
+{% endif %}

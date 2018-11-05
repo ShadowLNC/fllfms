@@ -1,4 +1,7 @@
+from collections import defaultdict
+
 from django.conf import settings
+from django.core.exceptions import ValidationError
 from django.db import models
 from django.utils.translation import gettext_lazy as _
 
@@ -37,7 +40,22 @@ class BaseScoresheet(models.Model):
         verbose_name=_("station referee"))
     # BLOB preferred vs file: https://arxiv.org/ftp/cs/papers/0701/0701168.pdf
     # Student signature. (PNG < 50KB0)
-    signature = models.BinaryField(verbose_name=_("team initials"))
+    signature = models.BinaryField(editable=True,
+                                   verbose_name=_("team initials"))
+
+    def clean(self, doraise=True):
+        errs = defaultdict(list)
+
+        if self.pk is not None:
+            old = self.__class__.objects.get(pk=self.pk)
+            if old.signature == self.signature:
+                errs['signature'].append(ValidationError(
+                    _("A new signature is required when updating scores."),
+                    code='required_change'))
+
+        if errs and doraise:
+            raise ValidationError(errs)
+        return errs  # In case we're subclassing.
 
     def save(self, *args, **kwargs):
         self.score = self.calculatescore()

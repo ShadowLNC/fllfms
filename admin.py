@@ -1,10 +1,60 @@
+from base64 import b64decode, b64encode
+
+from django import forms
 from django.conf import settings
+from django.core.exceptions import ValidationError
 from django.contrib import admin, messages
 from django.contrib.admin.widgets import AutocompleteSelect
 from django.db import models
+from django.db.models import Q
+from django.utils.html import format_html
 from django.utils.translation import gettext_lazy as _
+# from django.views.generic import RedirectView
 
-from .models import Team, Match, Player
+from .models import Team, Match, Player, Scoresheet
+
+
+class SignatureWidget(forms.Widget):
+    template_name = 'fllfms/signature_widget.html'
+
+    def format_value(self, value):
+        value = value or ""
+        if isinstance(value, str):
+            # Happens if we don't use to_python(), e.g. validation failure.
+            return value
+        return str(b64encode(value or b""), 'ascii')
+
+    @property
+    def media(self):
+        return forms.Media(
+            js=(
+                'fllfms/vendor/signature_pad/signature_pad.umd.min.js',
+                'fllfms/signature_widget.js',
+            ),
+            css={},
+        )
+
+
+class SignatureField(forms.Field):
+    initial = None
+    widget = SignatureWidget
+
+    def to_python(self, value):
+        if not value:
+            return None
+        try:
+            return b64decode(value)
+        except (TypeError, ValueError):
+            raise ValidationError(_("Invalid data format."),
+                                  code='invalid')
+
+    def clean(self, value):
+        value = self.to_python(value)
+        if value is None:
+            raise ValidationError(_("A signature is required."),
+                                  code='required')
+
+        return value
 
 
 class PlayerAdmin(admin.TabularInline):
@@ -205,3 +255,68 @@ class MatchAdmin(admin.ModelAdmin):
     inlines = [
         PlayerAdmin,
     ]
+
+
+@admin.register(Scoresheet)
+class ScoresheetAdmin(admin.ModelAdmin):
+    def imgsignature(self, obj):
+        return format_html('<img src="data:image/png;base64,{}">',
+                           str(b64encode(obj.signature), 'ascii'))
+    imgsignature.short_description = _("team initials")
+
+    def get_fieldsets(self, request, obj=None):
+        # Replace signature with imgsignature if it's going to be readonly.
+        # Kinda cheaty, but admin forms can only output text/booleans.
+        # We'd have to subclass at least 3 classes to do it "properly".
+        # I copied the "readonly form" check from ModelAdmin._changeform_view.
+        signature = 'signature'
+        if obj is not None and not self.has_change_permission(request, obj):
+            signature = 'imgsignature'
+
+        return (
+            (_("Player details"), {
+                'fields': ['player', 'referee']
+            }),
+        ) + Scoresheet.fieldsets + (
+            (_("Sign off"), {
+                'fields': [signature]
+            }),
+        )
+
+    _scorefields = sum(
+        (section[1]['fields'] for section in Scoresheet.fieldsets), [])
+
+    def formfield_for_dbfield(self, db_field, request, **kwargs):
+        db = kwargs.get('using')
+
+        if db_field.name == 'player':
+            if 'queryset' not in kwargs:
+                # Specify limiting and especially ordering here, not model.
+                mgr = db_field.remote_field.model._default_manager.using(db)
+                filter = Q(scoresheet__isnull=True,
+                           match__actual__isnull=False)
+
+                # If we're editing existing, show current selection too.
+                obj = request.resolver_match.kwargs.get('object_id', None)
+                if obj is not None:
+                    filter |= Q(scoresheet__pk=obj)
+
+                kwargs['queryset'] = mgr.filter(filter).order_by(
+                    '-match__actual', 'match', 'station')
+
+            # Skip the RelatedFieldWidgetWrapper.
+            return db_field.formfield(**kwargs)
+
+        if db_field.name == 'referee':
+            # Skip the RelatedFieldWidgetWrapper.
+            return db_field.formfield(**kwargs)
+
+        if db_field.name == 'signature':
+            return db_field.formfield(form_class=SignatureField, **kwargs)
+
+        if db_field.name in self._scorefields:
+            # TODO
+            pass
+
+        # Later: filter on referee role for referee field.
+        return super().formfield_for_dbfield(db_field, request, **kwargs)
