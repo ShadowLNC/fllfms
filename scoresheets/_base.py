@@ -10,6 +10,7 @@ from django.utils.translation import gettext_lazy as _
 # site will then make it a select/radio field where we can replicate the style
 # of the old LabVIEW system.
 # For choices/intchoices, database constraints are still required.
+# In all cases, ensure choices are strings for proper AdminSite handling.
 def boolchoices(**kwargs):
     return models.BooleanField(choices=[(1, _("Yes")), (0, _("No"))], **kwargs)
 
@@ -21,8 +22,8 @@ def intchoices(*ints, **kwargs):
 
 
 def choices(*choices, **kwargs):
-    return models.PositiveSmallIntegerField(choices=list(enumerate(choices)),
-                                            **kwargs)
+    return models.PositiveSmallIntegerField(
+        choices=[(i, str(c)) for i, c in enumerate(choices)], **kwargs)
 
 
 class BaseScoresheet(models.Model):

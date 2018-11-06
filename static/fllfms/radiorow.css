@@ -1,0 +1,89 @@
+.radiorow,
+.radiocolumn {
+    display: flex;
+    flex-wrap: wrap;  /* Only if absolutely necessary, rather than squishing */
+    justify-content: flex-start;
+    align-items: stretch;
+    align-content: stretch;
+    padding: 0 !important;
+}
+.radiorow {
+    flex-direction: row;
+}
+.radiocolumn {
+    flex-direction: column;
+}
+
+.radiorow li,
+.radiocolumn li {
+    flex-grow: 0;
+    flex-shrink: 0;
+    flex-basis: auto;
+    padding: 0;
+}
+
+.radiorow input,
+.radiocolumn input {
+    display: none;
+}
+
+.radiorow label,
+.radiocolumn label {
+    text-align: center;
+    display: block !important;
+    box-sizing: border-box;
+    width: 100% !important;
+    padding: 0.5em !important;
+    margin: 0;
+    background-color: #eee;
+    color: #000;
+    font-size: 1.5em;
+    border-style: solid;
+    border-color: #999;
+    cursor: pointer;
+}
+.radiorow label {
+    min-width: 3em;
+    border-width: 2px 1px;
+}
+.radiocolumn label {
+    border-width: 1px 2px;
+}
+
+.radiorow label::after,
+.radiocolumn label::after {
+    display: none !important; /* override some django stuff */
+}
+
+.radiorow input:checked + label,
+.radiocolumn input:checked + label {
+    font-weight: bold;
+    background-color: #33f;
+    color: #fff;
+}
+.radiorow input:active + label,
+.radiocolumn input:active + label {
+    font-weight: bold;
+    background-color: #66f;
+}
+
+.radiorow > label:first-of-type,
+.radiorow > li:first-of-type > label {
+    border-radius: 0.2em 0 0 0.2em;
+    border-left-width: 2px;
+}
+.radiorow > label:last-of-type,
+.radiorow > li:last-of-type > label {
+    border-radius: 0 0.2em 0.2em 0;
+    border-right-width: 2px;
+}
+.radiocolumn > label:first-of-type,
+.radiocolumn > li:first-of-type > label {
+    border-radius: 0.2em 0.2em 0 0;
+    border-top-width: 2px;
+}
+.radiocolumn > label:last-of-type,
+.radiocolumn > li:last-of-type > label {
+    border-radius: 0 0 0.2em 0.2em;
+    border-bottom-width: 2px;
+}

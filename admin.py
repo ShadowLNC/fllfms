@@ -7,11 +7,38 @@ from django.contrib import admin, messages
 from django.contrib.admin.widgets import AutocompleteSelect
 from django.db import models
 from django.db.models import Q
+from django.forms.widgets import RadioSelect
 from django.utils.html import format_html
 from django.utils.translation import gettext_lazy as _
 from django.urls import reverse
 
 from .models import Team, Match, Player, Scoresheet
+
+
+class RadioRow(RadioSelect):
+    template_name = "fllfms/radiorow.html"
+    option_template_name = "fllfms/radiorow_option.html"
+
+    # There are some remanants from the RadioSelect context, we ignore them.
+    # self.attrs seems to be applied to both <ul> and <input> elements.
+    # This is also true for RadioSelect, and doesn't seem to break anything.
+    def get_context(self, name, value, attrs):
+
+        # Work with long choices (automatic class if not declared).
+        if not self.attrs.get('class', None):
+            # If any option label is more than 5 chars, use vertical.
+            # Make sure to cast to str before len()!
+            long = any(len(str(i['label'])) > 5
+                       for i in self.options(None, []))
+            self.attrs['class'] = 'radiocolumn' if long else 'radiorow'
+
+        context = super().get_context(name, value, attrs)
+        context['widget']['options'] = self.options(
+            name, context['widget']['value'], attrs)
+        return context
+
+    class Media:
+        css = {'all': ("fllfms/radiorow.css",)}
 
 
 class SignatureWidget(forms.Widget):
@@ -24,14 +51,10 @@ class SignatureWidget(forms.Widget):
             return value
         return str(b64encode(value or b""), 'ascii')
 
-    @property
-    def media(self):
-        return forms.Media(
-            js=(
-                'fllfms/vendor/signature_pad/signature_pad.umd.min.js',
-                'fllfms/signature_widget.js',
-            ),
-            css={},
+    class Media:
+        js = (
+            "fllfms/vendor/signature_pad/signature_pad.umd.min.js",
+            "fllfms/signature_widget.js",
         )
 
 
@@ -337,8 +360,12 @@ class ScoresheetAdmin(admin.ModelAdmin):
             return db_field.formfield(form_class=SignatureField, **kwargs)
 
         if db_field.name in self._scorefields:
-            # TODO
-            pass
+            if 'widget' not in kwargs:
+                kwargs['widget'] = RadioRow()
+            if 'choices' not in kwargs:
+                kwargs['choices'] = db_field.get_choices(include_blank=False)
+
+            return db_field.formfield(**kwargs)
 
         # Later: filter on referee role for referee field.
         return super().formfield_for_dbfield(db_field, request, **kwargs)
