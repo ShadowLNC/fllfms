@@ -46,7 +46,7 @@ class BaseScoresheetTests(TestCase):
             scoresheet = self.get_base()
         return scoresheet
 
-    def test_defaults(self, **kwargs):
+    def test_defaults(self):
         s = self.with_missions()
         # s.score is not validated and is calculated during save.
         self.assertIsNone(s.score)  # Ensure score does not exist yet.
@@ -54,7 +54,18 @@ class BaseScoresheetTests(TestCase):
         s.save()
         self.assertIsNotNone(s.pk)
         self.assertIsNotNone(s.score)  # Check save() sets score.
+        s.signature = b'4321'  # Set new signature per clean().
         s.full_clean()  # Simulate edit (pk is not None) for clean()/save().
+
+    def test_validate_signature_must_change(self):
+        s = self.with_missions()
+        s.save()
+        self.assertIsNotNone(s.pk)
+        with self.assertRaises(ValidationError):
+            with transaction.atomic():
+                s.full_clean()
+        s.signature = b'4321'  # Change signature and verify error is resolved.
+        s.full_clean()
 
     def test_player_onetoone(self):
         s1 = self.with_missions()
@@ -69,7 +80,7 @@ class BaseScoresheetTests(TestCase):
             with transaction.atomic():
                 s2.save()
 
-    def test_player_delete(self, **kwargs):
+    def test_player_delete(self):
         s = self.with_missions()
         s.save()
         self.assertIsNotNone(s.pk)
@@ -77,7 +88,7 @@ class BaseScoresheetTests(TestCase):
             with transaction.atomic():
                 s.player.delete()
 
-    def test_referee_delete(self, **kwargs):
+    def test_referee_delete(self):
         s = self.with_missions()
         s.save()
         self.assertIsNotNone(s.pk)

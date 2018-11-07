@@ -52,7 +52,7 @@ class BaseScoresheet(models.Model):
             if old.signature == self.signature:
                 errs['signature'].append(ValidationError(
                     _("A new signature is required when updating scores."),
-                    code='required_change'))
+                    code='signature_must_change'))
 
         if errs and doraise:
             raise ValidationError(errs)
