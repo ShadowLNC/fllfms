@@ -12,6 +12,8 @@ from django.utils.html import format_html
 from django.utils.translation import gettext_lazy as _
 from django.urls import reverse
 
+from reversion.admin import VersionAdmin
+
 from .models import Team, Match, Player, Scoresheet
 
 
@@ -149,7 +151,7 @@ class PlayerAdmin(admin.TabularInline):
 
 
 @admin.register(Team)
-class TeamAdmin(admin.ModelAdmin):
+class TeamAdmin(VersionAdmin, admin.ModelAdmin):
     class EligibilityFilter(admin.SimpleListFilter):
         title = _("eligibility")
         parameter_name = 'dq'
@@ -192,7 +194,7 @@ class TeamAdmin(admin.ModelAdmin):
 
 
 @admin.register(Match)
-class MatchAdmin(admin.ModelAdmin):
+class MatchAdmin(VersionAdmin, admin.ModelAdmin):
     class MatchCompleteFilter(admin.SimpleListFilter):
         title = _("completion state")
         parameter_name = 'complete'
@@ -303,7 +305,7 @@ class MatchAdmin(admin.ModelAdmin):
 
 
 @admin.register(Scoresheet)
-class ScoresheetAdmin(admin.ModelAdmin):
+class ScoresheetAdmin(VersionAdmin, admin.ModelAdmin):
     def imgsignature(self, obj):
         return format_html('<img src="data:image/png;base64,{}">',
                            str(b64encode(obj.signature), 'ascii'))
@@ -342,7 +344,16 @@ class ScoresheetAdmin(admin.ModelAdmin):
                            match__actual__isnull=False)
 
                 # If we're editing existing, show current selection too.
-                obj = request.resolver_match.kwargs.get('object_id', None)
+                obj = request.resolver_match.kwargs.get('object_id')
+                if obj is None:
+                    # django-reversion uses args
+                    # If editing a revision, either the old value is available
+                    # for choice already, or it cannot be selected. However,
+                    # the current value is in use and won't normally appear.
+
+                    # Slice, then add [None] in case empty, then get element.
+                    obj = (request.resolver_match.args[:1] + (None,))[0]
+
                 if obj is not None:
                     filter |= Q(scoresheet__pk=obj)
 
