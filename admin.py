@@ -5,7 +5,7 @@ from django.conf import settings
 from django.core.exceptions import ValidationError
 from django.contrib import admin, messages
 from django.contrib.admin.widgets import AutocompleteSelect
-from django.db import models
+from django.db import models, transaction
 from django.db.models import Q
 from django.forms.widgets import RadioSelect
 from django.utils.html import format_html
@@ -212,7 +212,15 @@ class MatchAdmin(VersionAdmin, admin.ModelAdmin):
                 #   - Scores are present (when implemented - TODO), or
                 #   - Actual start time is NOT null
                 # (Str always casts True, so cast self.value() to int first.)
-                return queryset.filter(actual__isnull=int(self.value()))
+
+                action = queryset.filter  # For '0', filter on played matches.
+                if self.value() == '1':
+                    action = queryset.exclude  # Exclude played (Yet To Play).
+
+                # Distinct to prevent duplicates.
+                return action(Q(actual__isnull=False)
+                              | Q(players__scoresheet__isnull=False)
+                              ).distinct()
 
     class StationCountFilter(admin.SimpleListFilter):
         title = _("missing teams")
@@ -240,35 +248,78 @@ class MatchAdmin(VersionAdmin, admin.ModelAdmin):
                 return queryset.filter(
                     players__count=len(settings.FLLFMS['TOURNAMENTS']))
 
-    def reset(self, request, queryset):
-        # Filter to completed matches. TODO check for scoresheets when added.
-        queryset = queryset.filter(actual__isnull=False)
-        valid = all((
-            # TODO check scores once added.
-            self.has_change_permission(request, obj)
-            and True
-            for obj in queryset
-        ))
-        if valid:
-            # TODO delete scores, if present.
-            num = queryset.update(actual=None)
-            self.message_user(request, _("{} matches were reset.").format(num),
-                              level=messages.SUCCESS)
-        else:
-            self.message_user(
-                request, _("You do not have sufficient privileges to perform "
-                           "the requested action."),
-                level=messages.ERROR)
+    @staticmethod
+    def action_reset(self, request, queryset):
+        # NOTE: 'self' is the modeladmin object, which is provided.
+        # The staticmethod decorator ensures that it's not provided twice.
 
-    def empty(self, request, queryset):
+        # Reset the match to an unplayed state.
+        # Completed matches only (actual is not None or scoresheets exist).
+        # Note that distinct() is needed else the second Q causes duplicates.
+        queryset = queryset.prefetch_related('players__scoresheet').filter(
+            Q(actual__isnull=False) | Q(players__scoresheet__isnull=False)
+            ).distinct()
+        scoring = self.admin_site._registry.get(Scoresheet)
+
+        for match in queryset:
+            # We seek permission to clear actual and delete scoresheets,
+            # but not modify the player, since we don't do that.
+            if not self.has_change_permission(request, match):
+                break
+            for player in match.players.all():
+                if (getattr(player, 'scoresheet', None) is not None
+                        and not scoring.has_delete_permission(
+                            request, player.scoresheet)):
+                    break
+        else:
+            # Valid, the loop did not terminate.
+            with transaction.atomic():
+                count = queryset.count()  # Get count before updating.
+                Scoresheet.objects.filter(player__match__in=queryset).delete()
+                for match in queryset:
+                    if match.actual is not None:
+                        match.actual = None
+                        match.save()  # Trigger a reversion change.
+            self.message_user(
+                request, _(
+                    "{} matches were reset. Any other selected matches were "
+                    "already in an unplayed state.").format(count),
+                level=messages.SUCCESS)
+
+            return  # Skip error below.
+
+        self.message_user(
+            request, _("You do not have sufficient privileges to perform the "
+                       "requested action."),
+            level=messages.ERROR)
+
+    @staticmethod
+    def action_empty(self, request, queryset):
+        # NOTE: 'self' is the modeladmin object, which is provided.
+        # The staticmethod decorator ensures that it's not provided twice.
+
+        # Remove players from stations (only possible if match is unplayed).
+        if queryset.filter(
+                Q(actual__isnull=False) | Q(players__scoresheet__isnull=False)
+                ).exists():
+            self.message_user(
+                request, _("Selection includes matches that have already been "
+                           "played (cannot clear players). Reset those "
+                           "matches first."),
+                level=messages.ERROR)
+            return
+
         playeradmin = PlayerAdmin(parent_model=self.model,
                                   admin_site=self.admin_site)
-        queryset = Player.objects.filter(match__in=queryset)
+        playerset = Player.objects.filter(match__in=queryset)
         valid = all((
-            playeradmin.has_delete_permission(request, obj) for obj in queryset
+            playeradmin.has_delete_permission(request, obj)
+            for obj in playerset
         ))
         if valid:
-            num = queryset.delete()[0]
+            num = playerset.delete()[0]
+            for match in queryset:
+                match.save()  # Trigger reversion change.
             # TODO the ngettext translation thing.
             self.message_user(
                 request, _("{} players were deleted.").format(num),
@@ -292,12 +343,12 @@ class MatchAdmin(VersionAdmin, admin.ModelAdmin):
         actions = super().get_actions(request)
         # TODO check scoresheet deletion permissions.
         if self.has_change_permission(request) and True:
-            actions['reset'] = (self.__class__.reset, 'reset',
-                                _("Reset selected matches (time/scores)"))
+            actions['reset'] = (self.action_reset, 'reset', _(
+                "Reset selected matches to unplayed state (time/scores)"))
         if PlayerAdmin(parent_model=self.model, admin_site=self.admin_site
                        ).has_delete_permission(request):
-            actions['empty'] = (self.__class__.empty, 'empty',
-                                _("Delete all players from selected matches"))
+            actions['empty'] = (self.action_empty, 'empty', _(
+                "Delete all players from selected matches"))
         return actions
 
     inlines = [
