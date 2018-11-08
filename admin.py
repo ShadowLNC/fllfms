@@ -13,6 +13,7 @@ from django.utils.translation import gettext_lazy as _
 from django.urls import reverse
 
 from reversion.admin import VersionAdmin
+from reversion.models import Version
 
 from .models import Team, Match, Player, Scoresheet
 
@@ -347,12 +348,39 @@ class ScoresheetAdmin(VersionAdmin, admin.ModelAdmin):
                 obj = request.resolver_match.kwargs.get('object_id')
                 if obj is None:
                     # django-reversion uses args
-                    # If editing a revision, either the old value is available
-                    # for choice already, or it cannot be selected. However,
-                    # the current value is in use and won't normally appear.
-
+                    # The last item will always be the Version pk.
                     # Slice, then add [None] in case empty, then get element.
-                    obj = (request.resolver_match.args[:1] + (None,))[0]
+                    obj = (request.resolver_match.args[-1:] + (None,))[0]
+                    if obj is not None:
+                        obj = Version.objects.get(pk=obj)  # Get prev version.
+
+                        # When editing a revision, or recovering a deleted
+                        # object, a fake version is created to restore from. If
+                        # editing, this fake version overwrites the current
+                        # value, "freeing" that Player and allowing it to be
+                        # selected.
+
+                        # In both cases, the fake object uses the old Player in
+                        # the fake object, blocking it from appearing as
+                        # selectable (indeed, if the old Player is in use
+                        # elsewhere, the view fails since the fake cannot be
+                        # created). If the Player is unchanged between old and
+                        # current, the view succeeds, but still blocks the
+                        # value from selection.
+
+                        # We must whitelist the old Player for selection, since
+                        # this is a history view, so we want it visible, even
+                        # if it could not be selected (which won't happen since
+                        # the fake object creation would fail instead).
+
+                        # Without the fake, this gets the old value.
+                        # prev = obj.field_dict.get(db_field.column)
+                        # if prev is not None:
+                        #     filter |= Q(pk=prev)
+
+                        # Without the fake, this gets the current value.
+                        # For now, it's actually the old value from the fake.
+                        obj = obj.field_dict.get(Scoresheet._meta.pk.column)
 
                 if obj is not None:
                     filter |= Q(scoresheet__pk=obj)
