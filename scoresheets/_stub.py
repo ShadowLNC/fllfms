@@ -2,12 +2,12 @@ from django.db import models
 from django.db.models import Q
 from django.utils.translation import gettext_lazy as _
 
-from ._base import BaseScoresheet, intchoices
+from ._base import BaseScoresheet, choices
 
 
 class Scoresheet(BaseScoresheet):
-    missionscore = intchoices(*range(5), verbose_name=_("mission score"),
-                              help_text=_("Special condition of the mission."))
+    missionscore = choices(*range(5), verbose_name=_("mission score"),
+                           help_text=_("Special condition of the mission."))
 
     fieldsets = (
         (_("Generic mission score"), {

@@ -12,13 +12,7 @@ from django.utils.translation import gettext_lazy as _
 # For choices/intchoices, database constraints are still required.
 # In all cases, ensure choices are strings for proper AdminSite handling.
 def boolchoices(**kwargs):
-    return models.BooleanField(choices=[(1, _("Yes")), (0, _("No"))], **kwargs)
-
-
-def intchoices(*ints, **kwargs):
-    # We might have negative ints here.
-    return models.SmallIntegerField(choices=[(i, str(i)) for i in ints],
-                                    **kwargs)
+    return models.BooleanField(choices=[(0, _("No")), (1, _("Yes"))], **kwargs)
 
 
 def choices(*choices, **kwargs):
