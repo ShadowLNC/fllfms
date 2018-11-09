@@ -1,3 +1,5 @@
+from contextlib import suppress
+
 from django.core.exceptions import ValidationError
 from django.db import models
 from django.db.models import F, Q
@@ -221,26 +223,35 @@ class Scoresheet(BaseScoresheet):
 
     def clean(self):
         errs = super().clean(doraise=False)
-        if self.m03b and not self.m03a:
-            e = ValidationError(
-                _("Brick cannot be in Northeast Planet Area without ejection"),
-                code='m03b_prerequisite')
-            errs['m03a'].append(e)
-            errs['m03b'].append(e)
 
-        if self.m05b and self.m05c:
-            e = ValidationError(
-                _("Gas Core Sample cannot be both in Base and Lander's Target "
-                  "Circle"),
-                code='m05_exclusive')
-            errs['m05b'].append(e)
-            errs['m05c'].append(e)
+        with suppress(ValidationError):
+            # By cleaning the fields first, we ensure the data is of a valid
+            # type, and won't crash when we try to run this validation.
+            # If ValidationError is raised, the suppress catches it and we skip
+            # the clean() call for this validation (we know it fails anyway).
+            self.clean_fields()
 
-        if self.m14a + self.m14b > 2:
-            e = ValidationError(_("Maximum 2 total Meteoroids"),
-                                code='m14_sum')
-            errs['m14a'].append(e)
-            errs['m14b'].append(e)
+            if self.m03b and not self.m03a:
+                e = ValidationError(
+                    _("Brick cannot be in Northeast Planet Area if not "
+                      "ejected"),
+                    code='m03b_prerequisite')
+                errs['m03a'].append(e)
+                errs['m03b'].append(e)
+
+            if self.m05b and self.m05c:
+                e = ValidationError(
+                    _("Gas Core Sample cannot be both in Base and Lander's "
+                      "Target Circle"),
+                    code='m05_exclusive')
+                errs['m05b'].append(e)
+                errs['m05c'].append(e)
+
+            if self.m14a + self.m14b > 2:
+                e = ValidationError(_("Maximum 2 total Meteoroids"),
+                                    code='m14_sum')
+                errs['m14a'].append(e)
+                errs['m14b'].append(e)
 
         if errs:
             raise ValidationError(errs)
@@ -254,4 +265,27 @@ class Scoresheet(BaseScoresheet):
                                    name="m05_exclusive"),
             models.CheckConstraint(check=Q(m14a__lte=2 - F('m14b')),
                                    name="m14_sum"),
+
+
         ]
+
+        """
+        These constraints cause errors, so they are omitted until resolved.
+            # Validate field choice restrictions.
+            models.CheckConstraint(check=Q(m07__in=list(range(3))),
+                                   name="m07_choices"),
+            models.CheckConstraint(check=Q(m08__in=list(range(4))),
+                                   name="m08_choices"),
+            models.CheckConstraint(check=Q(m12__in=list(range(4))),
+                                   name="m12_choices"),
+            models.CheckConstraint(check=Q(m13__in=list(range(4))),
+                                   name="m13_choices"),
+            models.CheckConstraint(check=Q(m14a__in=list(range(3))),
+                                   name="m14a_choices"),
+            models.CheckConstraint(check=Q(m14b__in=list(range(3))),
+                                   name="m14b_choices"),
+            models.CheckConstraint(check=Q(m15b__in=list(range(4))),
+                                   name="m15b_choices"),
+            models.CheckConstraint(check=Q(penalties__in=list(range(7))),
+                                   name="penalties_choices"),
+        """

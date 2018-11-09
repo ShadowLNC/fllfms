@@ -2,7 +2,7 @@
 
 FLLFMS = {
     'EVENT_NAME': "My FLL Event",
-    'SCORESHEET': 'fllfms.scoresheets._stub',
+    'SCORESHEET': 'fllfms.scoresheets.intoorbit2018',
 
     # ########### WARNING ########### #
     # ONCE YOU HAVE POPULATED YOUR DATABASE
