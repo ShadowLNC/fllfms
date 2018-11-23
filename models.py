@@ -137,6 +137,10 @@ class Match(models.Model):
                 name="field_choices"),
         ]
 
+    @property
+    def ordered_players(self):
+        return self.players.all().order_by('station')
+
 
 class Player(models.Model):
     # Players are teams who play a given match in a given location.

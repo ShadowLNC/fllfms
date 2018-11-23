@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Schedule</title>
+    <style>
+        body {
+            font-family:'Segoe UI';
+            text-align: center;
+        }
+        table {
+            margin: 0px auto;
+            font-size: 1em;
+            /*border:1px solid black;*/
+            border-spacing: 0.1em;
+        }
+        tr {
+            /*border: 1px solid black;*/
+        }
+        tr:nth-of-type(2n+1) {
+            background-color: #ddd;
+        }
+        td {
+        }
+    </style>
+</head>
+<body style="font-family:'Segoe UI'; text-align:center">
+    <table><tbody>
+        <tr><td>Match</td><td>Round</td><td>Time</td><td>Field</td><td>Table 1</td><td>Table 2</td></tr>
+        {% for match in matches %}<tr{% if match.actual %} style="text-decoration:line-through"{% endif %}>
+            <td>{{ match.number }}</td>
+            <td>{{ match.round }}</td>
+            <td>{{ match.schedule }}</td>
+            <td>{{ match.get_field_display }}</td>
+            {% for player in match.ordered_players %}
+                <td>{{ player.team.number }}<br>{{ player.team.name }}</td>{% endfor %}
+        </tr>{% endfor %}
+
+    </tbody></table>
+</body>
+</html>
