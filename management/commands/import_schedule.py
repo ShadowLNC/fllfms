@@ -1,3 +1,4 @@
+from collections import defaultdict
 from contextlib import suppress
 import csv
 import datetime
@@ -20,7 +21,7 @@ class Command(BaseCommand):
 
     def add_arguments(self, parser):
         def date(strval):
-            return datetime.date(map(int, strval.split('-')))
+            return datetime.date(*map(int, strval.split('-')))
 
         parser.add_argument('file', type=str, help=_("File to import"))
         parser.add_argument('date', type=date, nargs='?',
@@ -39,8 +40,6 @@ class Command(BaseCommand):
         STATIONS = [i[0] for i in settings.FLLFMS['STATIONS']]
 
         def process_match_row(row, tournament):
-            number = int(row[0])
-
             try:
                 # Some of them store in decimal (% of day passed).
                 days = int(float(row[1]))
@@ -89,79 +88,79 @@ class Command(BaseCommand):
                 date + datetime.timedelta(days=days), time)
             time = tz().localize(time)
 
-            # Ignore empty columns (no player).
-            players = [(i, int(j)) for i, j in enumerate(row[3:]) if j]
-            if len(players) != len(STATIONS):
-                # Warn, but not a breaking error, even if extra supplied.
-                self.stdout.write(self.style.WARNING(_(
-                    "Got {0} players, expected {1} (match {2}).").format(
-                        len(players), len(STATIONS), number)))
-                players = players[:len(STATIONS)]  # Chop extra.
-
+            players = defaultdict(dict)
             # Each field column is `(field * station) - 1` (zero-indexed).
             # e.g. A1,A2,B1,B2, etc. (works for any number of stations/fields).
-            field = 0  # Default to first field.
-            if players:
-                # Ensure it's not empty before running these checks.
-                first = players[0][0]
-                first -= first % len(STATIONS)  # First station on this field.
-                last = players[-1][0]
-                if last - first > len(STATIONS):
-                    raise ValueError(_(
-                        "Player listings are on different fields (match {})."
-                        ).format(number))
-                field = first//len(STATIONS)  # Get the enum value by index.
+            for col, team in enumerate(row[3:]):
+                if not team:
+                    continue  # No team, skip.
+                team = int(team)
+
+                field = col // len(STATIONS)
                 if field > len(FIELDS):
                     # (Avoids FIELDS[field] IndexError, more details this way.)
                     raise ValueError(_(
-                        "Field number {0} too large (max {1}) (match {2})."
-                        ).format(field, len(FIELDS), number))
-            else:
-                field = FIELDS[0]  # Default to first field.
+                        "Field number {0} too large (max {1}) (time {2})."
+                        ).format(field, len(FIELDS), time.isoformat()))
 
-            # Now save the objects to the database.
-            round = 1
-            if number > 1:
-                round = Match.objects.get(tournament=tournament,
-                                          number=number-1).round
-            match = Match(
-                tournament=tournament, number=number, round=round,
-                field=FIELDS[field], schedule=time, actual=None)
-            match.full_clean()  # Ensure friendly errors.
-            match.save()
+                players[field][col % len(STATIONS)] = team
 
-            # Identify which players fail full_clean() (duplicate team/round).
-            clean_players = []
-            dirty_players = []  # "Clean failed."
-            for stn, team in players:
-                team = Team.objects.get(number=team)
-                # Get the enum value by index (take modulo to normalise index).
-                stn = STATIONS[stn % len(STATIONS)]
-                player = Player(team=team, match=match,
-                                station=stn, surrogate=False)
-                try:
-                    player.full_clean()
-                    # No exceptions, so it's clean.
-                    clean_players.append(player)
-                except ValidationError:
-                    # Too difficult to ensure correct ValidationError, so just
-                    # assume it is. Presumably any db constraints will restrict
-                    # all the important things anyway.
-                    dirty_players.append(player)
+            if not players:
+                players[0] = {}  # Default to first field (no players).
+            elif len(players) > 1:
+                # Warn, but not a breaking error, even if extra supplied.
+                self.stdout.write(self.style.WARNING(_(
+                    "Splitting simultaneous match (time {}).").format(
+                        time.isoformat())))
 
-            # If (players are present) and all are repeats, then next round.
-            if dirty_players and not clean_players:
-                match.round += 1
-                match.save()  # During setup, no race condition F(...).
-            # Else, make the extras surrogates.
-            else:
-                for p in dirty_players:
-                    p.surrogate = True
-            # Finally, save all.
-            clean_players.extend(dirty_players)
-            for p in clean_players:
-                p.full_clean()  # Ensure friendly errors.
-                p.save()
+            for field in players:
+                # Now save the objects to the database.
+                number = 1
+                round = 1
+                last = Match.objects.filter(
+                    tournament=tournament).order_by('number').last()
+                if last is not None:
+                    number = last.number + 1
+                    round = last.round
+
+                # Enum value by index for field.
+                match = Match(
+                    tournament=tournament, number=number, round=round,
+                    field=FIELDS[field], schedule=time, actual=None)
+                match.full_clean()  # Ensure friendly errors.
+                match.save()
+
+                # Find players that fail full_clean() (duplicate team/round).
+                clean_players = []
+                dirty_players = []  # "Clean failed."
+                for stn, team in players[field].items():
+                    team = Team.objects.get(number=team)
+                    # Get station enum value by index.
+                    player = Player(team=team, match=match,
+                                    station=STATIONS[stn], surrogate=False)
+                    try:
+                        player.full_clean()
+                        # No exceptions, so it's clean.
+                        clean_players.append(player)
+                    except ValidationError:
+                        # Too difficult to ensure correct ValidationError, so
+                        # just assume it is. Presumably any db constraints will
+                        # restrict all the important things anyway.
+                        dirty_players.append(player)
+
+                # If (players exist, and) all are repeats, then next round.
+                if dirty_players and not clean_players:
+                    match.round += 1
+                    match.save()  # During setup, no race condition F(...).
+                # Else, make the extras surrogates.
+                else:
+                    for p in dirty_players:
+                        p.surrogate = True
+                # Finally, save all.
+                clean_players.extend(dirty_players)
+                for p in clean_players:
+                    p.full_clean()  # Ensure friendly errors.
+                    p.save()
 
         with open(file, newline='') as f:
             reader = csv.reader(f, delimiter=',', quotechar='"')
