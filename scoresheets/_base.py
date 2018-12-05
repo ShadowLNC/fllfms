@@ -1,8 +1,11 @@
 from collections import defaultdict
+from contextlib import suppress
+from itertools import chain
 
 from django.conf import settings
 from django.core.exceptions import ValidationError
 from django.db import models
+from django.db.models.base import ModelBase
 from django.utils.translation import gettext_lazy as _
 
 
@@ -18,10 +21,46 @@ def boolchoices(**kwargs):
 
 def choices(*choices, **kwargs):
     return models.PositiveSmallIntegerField(
-        choices=[(i, str(c)) for i, c in enumerate(choices)], **kwargs)
+        choices=[(i, _(str(c))) for i, c in enumerate(choices)], **kwargs)
 
 
-class BaseScoresheet(models.Model):
+class MetaScoresheet(ModelBase):
+    def __new__(mcls, name, bases, attrs, **kwargs):
+        # This method transforms the mission specification [tuple] into a set
+        # of fields that are actually handled by the models.Model metaclass.
+        # It also wraps strings in gettext(), so it's not needed in the spec.
+
+        newmissions = []  # Can't edit the missions tuple.
+        for mname, mission in attrs['missions']:
+            mname = _(mname)
+            if 'description' in mission:
+                mission['description'] = _(mission['description'])
+
+            for fname, config in mission['fields']:
+                # Setup kwargs for field (rename/wrap with gettext).
+                fkwargs = {}
+                with suppress(KeyError):
+                    fkwargs['verbose_name'] = _(config['text'])
+                with suppress(KeyError):
+                    fkwargs['help_text'] = _(config['help'])
+
+                # If choices are present, map to integers, else default bool.
+                try:
+                    field = choices(*config['choices'], **fkwargs)
+                except KeyError:
+                    field = boolchoices(**fkwargs)
+
+                if fname not in attrs:
+                    # Prevent mission spec from overriding existing values.
+                    attrs[fname] = field
+
+            newmissions.append((mname, mission))
+
+        attrs['missions'] = newmissions
+        return super().__new__(mcls, name, bases, attrs, **kwargs)
+
+
+class BaseScoresheet(models.Model, metaclass=MetaScoresheet):
     player = models.OneToOneField(
         'player', related_name="scoresheet", on_delete=models.PROTECT,
         verbose_name=_("player"))
@@ -35,9 +74,31 @@ class BaseScoresheet(models.Model):
         settings.AUTH_USER_MODEL, on_delete=models.PROTECT,
         verbose_name=_("station referee"))
     # BLOB preferred vs file: https://arxiv.org/ftp/cs/papers/0701/0701168.pdf
-    # Student signature. (PNG < 50KB0)
+    # Student signature. (PNG < 50KB)
     signature = models.BinaryField(editable=True,
                                    verbose_name=_("team initials"))
+
+    def calculatescore(self):
+        score = 0
+
+        # Iterate over each mission to calculate the score.
+        # Subclasses can implement custom logic if missions rely on each other.
+        fields = chain.from_iterable((m[1]['fields'] for m in self.missions))
+        for name, config in fields:
+            # If weight is not declared, a zero multiplier (no score) is used.
+            value = getattr(self, name)  # The value entered on the scoresheet.
+            weight = config.get('value', 0)  # What the mission is worth.
+
+            # Determine type(weight) and use accordingly.
+            if callable(weight):
+                score += weight(value)
+            elif hasattr(weight, '__getitem__'):
+                score += weight[value]
+            else:
+                # Assume multiplier (integer/float).
+                score += value * weight
+
+        return score
 
     def clean(self, doraise=True):
         errs = defaultdict(list)
@@ -79,7 +140,4 @@ class BaseScoresheet(models.Model):
 
     # Everything below is expected to be overridden, but stubs are provided.
 
-    fieldsets = ()
-
-    def calculatescore(self):
-        return 0
+    missions = ()

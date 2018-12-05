@@ -1,3 +1,4 @@
+from copy import deepcopy
 from base64 import b64decode, b64encode
 
 from django import forms
@@ -358,6 +359,17 @@ class MatchAdmin(VersionAdmin, admin.ModelAdmin):
 
 @admin.register(Scoresheet)
 class ScoresheetAdmin(VersionAdmin, admin.ModelAdmin):
+    # Deepcopy but cast list to allow modifiction without altering original.
+    _mission_fieldsets = list(deepcopy(Scoresheet.missions))
+    for missionset in _mission_fieldsets:
+        # This modifies by reference, taking only first entry from each tuple.
+        # Each 'field' is a tuple (name, {**config}), we want a list of names.
+        missionset[1]['fields'] = [
+            mission[0] for mission in missionset[1]['fields']]
+
+    _mission_fields = sum(
+        (section[1]['fields'] for section in _mission_fieldsets), [])
+
     def imgsignature(self, obj):
         return format_html('<img src="data:image/png;base64,{}">',
                            str(b64encode(obj.signature), 'ascii'))
@@ -376,14 +388,11 @@ class ScoresheetAdmin(VersionAdmin, admin.ModelAdmin):
             (_("Player details"), {
                 'fields': ['player', 'referee']
             }),
-        ) + Scoresheet.fieldsets + (
+            *self._mission_fieldsets,
             (_("Sign off"), {
                 'fields': [signature]
             }),
         )
-
-    _scorefields = sum(
-        (section[1]['fields'] for section in Scoresheet.fieldsets), [])
 
     def formfield_for_dbfield(self, db_field, request, **kwargs):
         db = kwargs.get('using')
@@ -449,7 +458,7 @@ class ScoresheetAdmin(VersionAdmin, admin.ModelAdmin):
         if db_field.name == 'signature':
             return db_field.formfield(form_class=SignatureField, **kwargs)
 
-        if db_field.name in self._scorefields:
+        if db_field.name in self._mission_fields:
             if 'widget' not in kwargs:
                 kwargs['widget'] = RadioRow()
             if 'choices' not in kwargs:
