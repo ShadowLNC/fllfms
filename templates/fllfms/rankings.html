@@ -1,0 +1,41 @@
+{% load i18n %}<!DOCTYPE html>
+<html>
+<head>
+    <title>{% blocktrans %}{{ tournament }} Scores - {{ event }}{% endblocktrans %}</title>
+    <style>
+        body {
+            font-family:'Segoe UI';
+            text-align: center;
+        }
+        #rankings {
+            margin: 0px auto;
+            font-size: 2em;
+            /*border:1px solid black;*/
+            border-spacing: 0.1em;
+        }
+        #rankings tr {
+            /*border: 1px solid black;*/
+        }
+        #rankings tr:nth-of-type(2n+1) {
+            background-color: #ddd;
+        }
+        #rankings td {
+        }
+        .highscore {
+            background-color: #ff990099;
+            font-weight: bold;
+        }
+    </style>
+</head>
+<body>
+    <h1>{% blocktrans %}{{ event }} ({{ tournament }} Scores){% endblocktrans %}</h1>
+    <table id="rankings"><tbody>
+        <tr><td>Rank</td><td>Team</td>{% for round in roundrange %}<td>Round {{ round }}</td>{% endfor %}</tr>
+        {% for team in teams %}<tr>
+            <td>{% if not team.dq %}{{ team.rank }}{% else %}{% trans "DQ" %}{% endif %}</td>
+            <td>#{{ team.number }} - {{ team.name }}</td>
+            {% for score in team.scores %}<td{% if score is not None and score == team.best1 %} class="highscore"{% endif %}>{{ score|default_if_none:"-" }}</td>{% endfor %}
+        </tr>{% endfor %}
+    </tbody></table>
+</body>
+</html>
