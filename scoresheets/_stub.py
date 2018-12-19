@@ -18,10 +18,3 @@ class Scoresheet(BaseScoresheet):
             ]
         }),
     )
-
-    class Meta:
-        # Remember to cast range objects to lists! Django can't deconstruct.
-        constraints = [
-            models.CheckConstraint(check=Q(missionscore__in=list(range(5))),
-                                   name="missionscore_choices"),
-        ]

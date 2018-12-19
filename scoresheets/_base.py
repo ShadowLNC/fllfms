@@ -5,6 +5,7 @@ from itertools import chain
 from django.conf import settings
 from django.core.exceptions import ValidationError
 from django.db import models
+from django.db.models import Q
 from django.db.models.base import ModelBase
 from django.utils.translation import gettext_lazy as _
 
@@ -27,8 +28,36 @@ def choices(*choices, **kwargs):
 class MetaScoresheet(ModelBase):
     def __new__(mcls, name, bases, attrs, **kwargs):
         # This method transforms the mission specification [tuple] into a set
-        # of fields that are actually handled by the models.Model metaclass.
-        # It also wraps strings in gettext(), so it's not needed in the spec.
+        # of fields that are actually handled by the models.Model metaclass,
+        # and sets up the model Meta options to inherit parent Meta options.
+        # It also wraps strings in gettext(), in case it's omitted in the spec.
+
+        # Because the Meta options class is a standard class attribute, a child
+        # class declaring the Meta options class won't actually inherit any
+        # parent Meta options. This adds "nested" inheritance (for Meta only).
+
+        # Doing this also allows BaseScoresheet to define default constraints.
+        # Later: If necessary, we can extract constraints from metabases and
+        # flatten them together for more "nested" inheritance.
+        metabases = []
+        for base in bases:
+            with suppress(AttributeError):
+                metabases.append(base.Meta)
+
+        # Prevent nested inheritance from making every model abstract.
+        class NotAbstactMeta:
+            abstract = False
+        metabases.insert(0, NotAbstactMeta)
+
+        # Create an empty class which inherits from attrs['Meta'] if defined,
+        # then all the metabases from above.
+        with suppress(KeyError):
+            metabases.insert(0, attrs['Meta'])
+        attrs['Meta'] = type('Meta', tuple(metabases), {})
+
+        # Now, we take each "mission" which has multiple fields or scoring
+        # opportunities, and take each field and instantiate a Django field.
+        # We also add constraints for database integrity where appropriate.
 
         newmissions = []  # Can't edit the missions tuple.
         for mname, mission in attrs['missions']:
@@ -45,14 +74,30 @@ class MetaScoresheet(ModelBase):
                     fkwargs['help_text'] = _(config['help'])
 
                 # If choices are present, map to integers, else default bool.
-                try:
+                if 'choices' in config:
                     field = choices(*config['choices'], **fkwargs)
-                except KeyError:
+                    # Validate field choice restrictions.
+                    constraint = {
+                        # choices() uses enumerate, so available choices are
+                        # equivalent to range(len(config['choices'])), but
+                        # Django can't deconstruct range(), so we cast to list.
+                        # We could use {}__in=<above list>, but it should be
+                        # more efficient to define interval start and end.
+                        "{}__gte".format(fname): 0,
+                        "{}__lt".format(fname): len(config['choices']),
+                    }
+                    constraint = models.CheckConstraint(
+                        check=Q(**constraint), name="{}_choices".format(fname))
+                else:
                     field = boolchoices(**fkwargs)
+                    constraint = None
 
                 if fname not in attrs:
                     # Prevent mission spec from overriding existing values.
                     attrs[fname] = field
+                    # Only append constraint if we are also defining the field.
+                    if constraint is not None:
+                        attrs['Meta'].constraints.append(constraint)
 
             newmissions.append((mname, mission))
 
@@ -100,7 +145,7 @@ class BaseScoresheet(models.Model, metaclass=MetaScoresheet):
 
         return score
 
-    def clean(self, doraise=True):
+    def clean(self):
         errs = defaultdict(list)
 
         if self.pk is not None:
@@ -110,9 +155,16 @@ class BaseScoresheet(models.Model, metaclass=MetaScoresheet):
                     _("A new signature is required when updating scores."),
                     code='signature_must_change'))
 
-        if errs and doraise:
+        with suppress(ValidationError):
+            # By cleaning the fields first, we ensure the data is of a valid
+            # type, and won't crash when we try to validate scores.
+            # If ValidationError is raised, the suppress catches it and we skip
+            # the clean_scores() call (we know model validation fails anyway).
+            self.clean_fields()
+            self.clean_scores(errs)  # Modifies by reference to add errors.
+
+        if errs:
             raise ValidationError(errs)
-        return errs  # In case we're subclassing.
 
     def save(self, *args, **kwargs):
         self.score = self.calculatescore()
@@ -135,9 +187,15 @@ class BaseScoresheet(models.Model, metaclass=MetaScoresheet):
 
     class Meta:
         abstract = True
+
         verbose_name = _("scoresheet")
         verbose_name_plural = _("scoresheets")
+
+        constraints = []  # Expected to be overridden, as per below.
 
     # Everything below is expected to be overridden, but stubs are provided.
 
     missions = ()
+
+    def clean_scores(self, errs):
+        pass
