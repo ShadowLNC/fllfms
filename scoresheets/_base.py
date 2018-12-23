@@ -21,8 +21,8 @@ def boolchoices(**kwargs):
 
 
 def choices(*choices, **kwargs):
-    return models.PositiveSmallIntegerField(
-        choices=[(i, _(str(c))) for i, c in enumerate(choices)], **kwargs)
+    return models.PositiveSmallIntegerField(choices=list(enumerate(choices)),
+                                            **kwargs)
 
 
 class MetaScoresheet(ModelBase):
@@ -31,6 +31,11 @@ class MetaScoresheet(ModelBase):
         # of fields that are actually handled by the models.Model metaclass,
         # and sets up the model Meta options to inherit parent Meta options.
         # It also wraps strings in gettext(), in case it's omitted in the spec.
+
+        # WARNING: the gettext() calls are a last-ditch attempt to translate,
+        # as Django's makemessages won't pick up these calls, so there probably
+        # won't be a translation available. Wrapping the mission strings
+        # individually is still necessary.
 
         # Because the Meta options class is a standard class attribute, a child
         # class declaring the Meta options class won't actually inherit any
