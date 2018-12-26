@@ -1,10 +1,12 @@
+import os.path
 from collections import defaultdict
 from importlib import import_module
 
 from django.conf import settings
 from django.db import models
 from django.db.models import Q
-from django.core.validators import MinValueValidator, MaxValueValidator
+from django.core.validators import (
+    MinValueValidator, MaxValueValidator, RegexValidator)
 from django.core.exceptions import ValidationError, NON_FIELD_ERRORS
 from django.utils.translation import gettext_lazy as _
 
@@ -21,6 +23,27 @@ def bounds(*, low=None, high=None):
     if high is not None:
         res.append(MaxValueValidator(high))
     return res
+
+
+CSSREGEX = r"^( *-?[_a-zA-Z]+[_a-zA-Z0-9-]*( *|$))*"
+
+
+def cssfield(**kwargs):
+    if 'validators' not in kwargs:
+        kwargs['validators'] = []
+    kwargs['validators'].append(RegexValidator(CSSREGEX))
+    return models.CharField(blank=True, max_length=100, **kwargs)
+
+
+def soundfield(**kwargs):
+    # Note that the path is restricted to the "sounds" subfolder in this
+    # repository's static folder. We may need to change this in the future.
+    # Django will create a static URL, so no database validation required.
+    return models.FilePathField(
+        path=os.path.join(settings.BASE_DIR,
+                          "fllfms", "static", "fllfms", "sounds"),
+        match=None, recursive=True, max_length=100, blank=True,
+        allow_files=True, allow_folders=False, **kwargs)
 
 
 class Team(models.Model):
@@ -225,4 +248,191 @@ class Player(models.Model):
                 check=Q(station__in=[
                     i[0] for i in settings.FLLFMS['STATIONS']]),
                 name="station_choices"),
+        ]
+
+
+class Timer(models.Model):
+    name = models.CharField(
+        blank=True, max_length=100, verbose_name=_("name (optional)"),
+        help_text=_("only visible in admin"))
+
+    # See the properties below for the meaning of these values.
+    # Technically blank=True unnecessary as editable=False for starttime.
+    starttime = models.DateTimeField(auto_now=False, auto_now_add=False,
+                                     editable=False, blank=True, null=True,
+                                     verbose_name=_("start time"))
+    active = models.BooleanField(editable=False,
+                                 verbose_name=_("active (prestart/running)"))
+
+    profile = models.ForeignKey('TimerProfile', on_delete=models.PROTECT,
+                                related_name="timers",
+                                verbose_name=_("timing profile"))
+
+    # Only one timer per match, or we could have a race condition.
+    # (Timers... racing... I'm sure there's a pun here.)
+    match = models.OneToOneField('Match', on_delete=models.SET_NULL,
+                                 blank=True, null=True, related_name="timers",
+                                 verbose_name=_("attached timers"))
+
+    # Timer states: prestart (primed), running, finished, aborted.
+    # States: prestart (initial) > running > finished or aborted > prestart.
+    @property
+    def prestart(self):
+        return self.start is None and self.active
+
+    @property
+    def running(self):
+        return self.start is not None and self.active
+
+    @property
+    def finished(self):
+        return self.start is not None and not self.active
+
+    @property
+    def aborted(self):
+        return self.start is None and not self.active
+
+    def clean(self):
+        errs = defaultdict(list)
+
+        if self.pk is not None:
+            # Timer cannot be altered if running.
+            # We can't block prestart as there's no way to exit prestart.
+            running = self.running
+            if not running:
+                # Might be different if updated before form submission.
+                db_ver = self.__class__.objects.get(pk=self.pk)
+                running = db_ver.running
+            if running:
+                errs[NON_FIELD_ERRORS].append(ValidationError(
+                    _("Timer is running, cannot change any information."),
+                    code="timer_locked_running"))
+
+        if errs:
+            raise ValidationError(errs)
+
+    def __repr__(self, raw=False):
+        # The raw argument allows for the class name to be omitted.
+        out = str(self.pk)
+        if raw:
+            return out
+        return "<{}: {}>".format(self.__class__.__name__, out)
+
+    def __str__(self):
+        return "{} ({})".format(self.pk, self.name)
+
+    class Meta:
+        verbose_name = _("timer")
+        verbose_name_plural = _("timers")
+
+
+class TimerProfile(models.Model):
+    name = models.CharField(blank=True, max_length=100,
+                            verbose_name=_("name (optional)"))
+    length = models.DurationField(verbose_name=_("timer length"))
+    format = models.BooleanField(
+        choices=((False, _("Seconds")), (True, _("Minutes"))),
+        verbose_name=_("display time as"), default=True)
+
+    # No prestartdisplay: Always displays 0 to indicate not running.
+    # (No prestartsound by definition.)
+    prestartcss = cssfield(verbose_name=_("prestart css class(es)"))
+
+    startcss = cssfield(verbose_name=_("start css class(es)"))
+    startdisplay = models.DurationField(
+        verbose_name=_("count down from"), help_text=_(
+            "(negative values will be displayed as 0)"))
+    startsound = soundfield(verbose_name=_("start sound file"))
+
+    # No enddisplay: Always 0.
+    endcss = cssfield(verbose_name=_("end css class(es)"))
+    endsound = soundfield(verbose_name=_("end sound file"))
+
+    # No abortcss: Upon abort, inherit from endcss/enddisplay.
+    abortsound = soundfield(verbose_name=_("abort sound file"))
+
+    def clean(self):
+        errs = defaultdict(list)
+
+        if any(timer.running for timer in self.timers.all()):
+            errs[NON_FIELD_ERRORS].append(ValueError(
+                _("One or more linked timers are running, cannot change any "
+                  "information."),
+                code="timer_locked_running"))
+
+        if errs:
+            raise ValidationError(errs)
+
+    def __repr__(self, raw=False):
+        # The raw argument allows for the class name to be omitted.
+        out = str(self.name)
+        if raw:
+            return out
+        return "<{}: {}>".format(self.__class__.__name__, out)
+
+    # Django admin site representation.
+    def __str__(self):
+        return self.__repr__(raw=True)
+
+    class Meta:
+        verbose_name = _("timing profile")
+        verbose_name_plural = _("timing profiles")
+
+        constraints = [
+            models.CheckConstraint(check=Q(prestartcss__regex=CSSREGEX),
+                                   name="prestartcss_regex"),
+            models.CheckConstraint(check=Q(startcss__regex=CSSREGEX),
+                                   name="startcss_regex"),
+            models.CheckConstraint(check=Q(endcss__regex=CSSREGEX),
+                                   name="endcss_regex"),
+        ]
+
+
+class TimerStage(models.Model):
+    profile = models.ForeignKey('TimerProfile', on_delete=models.CASCADE,
+                                related_name="stages",
+                                verbose_name=_("timing stages"))
+
+    name = models.CharField(blank=True, max_length=100,
+                            verbose_name=_("name (optional)"))
+
+    # Elapsed time before this stage will be triggered.
+    time = models.DurationField(verbose_name=_("begin stage after"))
+
+    css = cssfield(verbose_name=_("css class(es)"))
+    display = models.DurationField(verbose_name=_("count down from"))
+    sound = soundfield(verbose_name=_("sound file"))
+
+    def clean(self):
+        errs = defaultdict(list)
+
+        if (self.profile is not None
+                and any(timer.running for timer in self.profile.timers.all())):
+            errs[NON_FIELD_ERRORS].append(ValueError(
+                _("One or more linked timers are running, cannot change any "
+                  "information."),
+                code="timer_locked_running"))
+
+        if errs:
+            raise ValidationError(errs)
+
+    def __repr__(self, raw=False):
+        # The raw argument allows for the class name to be omitted.
+        profile = getattr(self, 'profile', TimerProfile())
+        out = "{}.{}".format(profile.__repr__(raw=True), self.name)
+        if raw:
+            return out
+        return "<{}: {}>".format(self.__class__.__name__, out)
+
+    # Django admin site representation.
+    def __str__(self):
+        return self.__repr__(raw=True)
+
+    class Meta:
+        verbose_name = _("timing profile stage")
+        verbose_name_plural = _("timing profile stages")
+
+        constraints = [
+            models.CheckConstraint(check=Q(css__regex=CSSREGEX),
+                                   name="css_regex"),
         ]
