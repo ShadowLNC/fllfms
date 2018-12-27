@@ -16,7 +16,8 @@ from django.urls import reverse
 from reversion.admin import VersionAdmin
 from reversion.models import Version
 
-from .models import Team, Match, Player, Scoresheet
+from .models import (Team, Match, Player, Scoresheet,
+                     Timer, TimerProfile, TimerStage)
 
 
 class RadioRow(RadioSelect):
@@ -339,6 +340,7 @@ class MatchAdmin(VersionAdmin, admin.ModelAdmin):
                    MatchCompleteFilter, StationCountFilter,)
     ordering = ('-tournament', 'number',)
     fields = list_display
+    search_fields = ('number',)
 
     def get_actions(self, request):
         actions = super().get_actions(request)
@@ -468,3 +470,53 @@ class ScoresheetAdmin(VersionAdmin, admin.ModelAdmin):
 
         # Later: filter on referee role for referee field.
         return super().formfield_for_dbfield(db_field, request, **kwargs)
+
+
+class TimerStageAdmin(admin.TabularInline):
+    model = TimerStage
+    fields = ('name', 'trigger', 'css', 'display', 'sound',)
+
+    ordering = ('trigger', 'name', 'pk',)
+
+
+@admin.register(Timer)
+class TimerAdmin(VersionAdmin, admin.ModelAdmin):
+    list_display = ('id', 'name', 'match', 'state', 'profile',)
+    list_display_links = list_display[:2]
+    list_editable = ('match',)
+    fields = list_display
+    readonly_fields = ('id', 'state',)
+    autocomplete_fields = ('match',)
+
+    ordering = ('name', 'pk',)
+
+    def state(self, timer):
+        states = {
+            'prestart': _('Pre-Start'),
+            'running': _('Running'),
+            'finished': _('Stopped'),
+            'aborted': _('Failed'),
+        }
+        for s, name in states.items():
+            if getattr(timer, s):
+                return name
+        return None  # Fallback if no state is active (shouldn't happen).
+    state.short_description = _("timer state")
+
+
+@admin.register(TimerProfile)
+class TimerProfileAdmin(VersionAdmin, admin.ModelAdmin):
+    list_display = ('name', 'duration', 'format',)
+    # fields = list_display
+    ordering = ('name', 'duration', 'pk',)
+    fieldsets = (
+        (_("General"), {'fields': ('name', 'duration', 'format',)}),
+        (_("Pre-Start"), {'fields': ('prestartcss',)}),
+        (_("Start"), {'fields': ('startcss', 'startdisplay', 'startsound',)}),
+        (_("End"), {'fields': ('endcss', 'endsound',)}),
+        (_("Abort"), {'fields': ('abortsound',)}),
+    )
+
+    inlines = [
+        TimerStageAdmin,
+    ]

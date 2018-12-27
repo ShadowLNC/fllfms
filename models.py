@@ -254,43 +254,45 @@ class Player(models.Model):
 class Timer(models.Model):
     name = models.CharField(
         blank=True, max_length=100, verbose_name=_("name (optional)"),
-        help_text=_("only visible in admin"))
+        help_text=_("Only visible in admin."))
 
     # See the properties below for the meaning of these values.
     # Technically blank=True unnecessary as editable=False for starttime.
     starttime = models.DateTimeField(auto_now=False, auto_now_add=False,
                                      editable=False, blank=True, null=True,
                                      verbose_name=_("start time"))
-    active = models.BooleanField(editable=False,
-                                 verbose_name=_("active (prestart/running)"))
+    active = models.BooleanField(editable=False, default=True,
+                                 verbose_name=_("active (pre-start/running)"))
 
     profile = models.ForeignKey('TimerProfile', on_delete=models.PROTECT,
                                 related_name="timers",
                                 verbose_name=_("timing profile"))
+    # TODO: Add match fields as ManyToMany to restrict timer next/prev matches.
+    # This can only be done once fields are ForeignKey and not set choices.
 
     # Only one timer per match, or we could have a race condition.
     # (Timers... racing... I'm sure there's a pun here.)
     match = models.OneToOneField('Match', on_delete=models.SET_NULL,
                                  blank=True, null=True, related_name="timers",
-                                 verbose_name=_("attached timers"))
+                                 verbose_name=_("current match"))
 
     # Timer states: prestart (primed), running, finished, aborted.
     # States: prestart (initial) > running > finished or aborted > prestart.
     @property
     def prestart(self):
-        return self.start is None and self.active
+        return self.starttime is None and self.active
 
     @property
     def running(self):
-        return self.start is not None and self.active
+        return self.starttime is not None and self.active
 
     @property
     def finished(self):
-        return self.start is not None and not self.active
+        return self.starttime is not None and not self.active
 
     @property
     def aborted(self):
-        return self.start is None and not self.active
+        return self.starttime is None and not self.active
 
     def clean(self):
         errs = defaultdict(list)
@@ -327,21 +329,25 @@ class Timer(models.Model):
 
 
 class TimerProfile(models.Model):
-    name = models.CharField(blank=True, max_length=100,
-                            verbose_name=_("name (optional)"))
-    length = models.DurationField(verbose_name=_("timer length"))
+    name = models.CharField(unique=True, max_length=100,
+                            verbose_name=_("name"))
+    duration = models.DurationField(
+        verbose_name=_("timer length"),
+        help_text=_("Time fields use the format \"D H:M:S\" "
+                    "(omit leading fields if not used)."))
     format = models.BooleanField(
         choices=((False, _("Seconds")), (True, _("Minutes"))),
         verbose_name=_("display time as"), default=True)
 
     # No prestartdisplay: Always displays 0 to indicate not running.
     # (No prestartsound by definition.)
-    prestartcss = cssfield(verbose_name=_("prestart css class(es)"))
+    prestartcss = cssfield(verbose_name=_("pre-start css class(es)"))
 
     startcss = cssfield(verbose_name=_("start css class(es)"))
     startdisplay = models.DurationField(
-        verbose_name=_("count down from"), help_text=_(
-            "(negative values will be displayed as 0)"))
+        blank=True, null=True, verbose_name=_("count down from"),
+        help_text=_("Leave blank to use the timer length.<br>"
+                    "Negative values will be displayed as 0."))
     startsound = soundfield(verbose_name=_("start sound file"))
 
     # No enddisplay: Always 0.
@@ -397,10 +403,13 @@ class TimerStage(models.Model):
                             verbose_name=_("name (optional)"))
 
     # Elapsed time before this stage will be triggered.
-    time = models.DurationField(verbose_name=_("begin stage after"))
+    trigger = models.DurationField(verbose_name=_("begin stage after"))
 
     css = cssfield(verbose_name=_("css class(es)"))
-    display = models.DurationField(verbose_name=_("count down from"))
+    # Help text won't be shown here, but behaviour is consistent with
+    # startdisplay from TimerProfile. It needs to be documented in the manual.
+    display = models.DurationField(blank=True, null=True,
+                                   verbose_name=_("count down from"))
     sound = soundfield(verbose_name=_("sound file"))
 
     def clean(self):
@@ -429,8 +438,8 @@ class TimerStage(models.Model):
         return self.__repr__(raw=True)
 
     class Meta:
-        verbose_name = _("timing profile stage")
-        verbose_name_plural = _("timing profile stages")
+        verbose_name = _("timing stage")
+        verbose_name_plural = _("timing stages")
 
         constraints = [
             models.CheckConstraint(check=Q(css__regex=CSSREGEX),
