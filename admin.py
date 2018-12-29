@@ -9,9 +9,10 @@ from django.contrib.admin.widgets import AutocompleteSelect
 from django.db import models, transaction
 from django.db.models import Q
 from django.forms.widgets import RadioSelect
+from django.shortcuts import render
 from django.utils.html import format_html
 from django.utils.translation import gettext_lazy as _
-from django.urls import reverse
+from django.urls import path, reverse
 
 from reversion.admin import VersionAdmin
 from reversion.models import Version
@@ -502,6 +503,19 @@ class TimerAdmin(VersionAdmin, admin.ModelAdmin):
                 return name
         return None  # Fallback if no state is active (shouldn't happen).
     state.short_description = _("timer state")
+
+    def get_urls(self):
+        info = self.model._meta.app_label, self.model._meta.model_name
+
+        return [
+            path('<path:object_id>/control/',
+                 self.admin_site.admin_view(self.control_view),
+                 name="{}_{}_control".format(*info)),
+            *super().get_urls(),
+        ]
+
+    def control_view(self, request, object_id) :
+        return render(request, 'fllfms/timer_control.html')
 
 
 @admin.register(TimerProfile)

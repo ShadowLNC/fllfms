@@ -1,0 +1,56 @@
+{% load static %}<!DOCTYPE html>
+<html>
+<head>
+    <title>Timer Control</title>
+    <link rel="stylesheet" href="{% static 'fllfms/timer.css' %}">
+    <script src="{% static 'fllfms/timer.js' %}"></script>
+    <script>
+        window.addEventListener('load', () => {
+            const t = new Timer(document.querySelector("#timer"));
+            window.t = t;
+            t.profile = {
+                duration: 10000000,
+                prestartcss: 'cream',
+                startcss: 'green',
+                startsound: 'http://www.team228.org/documents/2004/charge-1.wav',
+                startdisplay: null,
+                endcss: 'red',
+                endsound: 'http://www.team228.org/documents/2004/buzzer.wav',
+                abortsound: 'http://www.team228.org/documents/2004/fog-blast.wav',
+                stages: [
+                    {
+                        trigger: 5000000,
+                        css: 'yellow',
+                        sound: 'http://www.team228.org/documents/2004/three-bells.wav',
+                        display: null,
+                    },
+                    {
+                        trigger: 6000000,
+                        css: 'green',
+                        sound: null,
+                        display: null,
+                    }
+                ]
+            };
+            document.querySelector("#start").addEventListener('click', t.statechange.bind(t));
+        });
+    </script>
+</head>
+<body>
+    <button id="matchprev" onclick="t.statechange(null);">Prev</button>
+    <div id="matchno">-</div>
+    <button id="matchnext">Next</button>
+
+    <div id="matchname">Match Name</div>
+    <div id="matchplayers">
+        <div>1 team xyz</div>
+        <div>1 team xyz</div>
+    </div>
+
+    <div id="timer">0</div>
+
+    <button id="start">Start</button>
+    <button id="stop">Stop</button>
+
+</body>
+</html>
