@@ -9,6 +9,7 @@
             const t = new Timer(document.querySelector("#timer"));
             window.t = t;
             t.profile = {
+                format: true,
                 duration: 10000000,
                 prestartcss: 'cream',
                 startcss: 'green',
@@ -32,12 +33,15 @@
                     }
                 ]
             };
-            document.querySelector("#start").addEventListener('click', t.statechange.bind(t));
+            t.action = {type: "prestart", timestamp: Date.now()*1000};
+            document.querySelector("#start").addEventListener('click', () => {
+                t.action = {type: "start", timestamp: Date.now()*1000};
+            });
         });
     </script>
 </head>
 <body>
-    <button id="matchprev" onclick="t.statechange(null);">Prev</button>
+    <button id="matchprev">Prev</button>
     <div id="matchno">-</div>
     <button id="matchnext">Next</button>
 
