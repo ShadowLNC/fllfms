@@ -26,6 +26,8 @@ def bounds(*, low=None, high=None):
 
 
 CSSREGEX = r"^( *-?[_a-zA-Z]+[_a-zA-Z0-9-]*( *|$))*"
+# Used to find relative paths when reading the soundfield absolute paths.
+APP_STATIC_ROOT = os.path.join(settings.BASE_DIR, "fllfms", "static")
 
 
 def cssfield(**kwargs):
@@ -40,8 +42,8 @@ def soundfield(**kwargs):
     # repository's static folder. We may need to change this in the future.
     # Django will create a static URL, so no database validation required.
     return models.FilePathField(
-        path=os.path.join(settings.BASE_DIR,
-                          "fllfms", "static", "fllfms", "sounds"),
+        # Blank subdirectory gives path trailing /, removes filename leading /.
+        path=os.path.join(APP_STATIC_ROOT, "fllfms", "sounds", ""),
         match=None, recursive=True, max_length=100, blank=True,
         allow_files=True, allow_folders=False, **kwargs)
 
@@ -273,38 +275,46 @@ class Timer(models.Model):
     # Only one timer per match, or we could have a race condition.
     # (Timers... racing... I'm sure there's a pun here.)
     match = models.OneToOneField('Match', on_delete=models.SET_NULL,
-                                 blank=True, null=True, related_name="timers",
+                                 blank=True, null=True, related_name="timer",
                                  verbose_name=_("current match"))
 
-    # Timer states: prestart (primed), running, finished, aborted.
-    # States: prestart (initial) > running > finished or aborted > prestart.
+    # Timer states: prestart (primed), start (running), end (finished), abort.
+    # States: prestart (initial) > start > end/abort > prestart.
     @property
     def prestart(self):
         return self.starttime is None and self.active
 
     @property
-    def running(self):
+    def start(self):
         return self.starttime is not None and self.active
 
     @property
-    def finished(self):
+    def end(self):
         return self.starttime is not None and not self.active
 
     @property
-    def aborted(self):
+    def abort(self):
         return self.starttime is None and not self.active
+
+    @property
+    def state(self):
+        possible = ['prestart', 'start', 'end', 'abort']
+        for i in possible:
+            if getattr(self, i):
+                return i
+        return None  # Default.
 
     def clean(self):
         errs = defaultdict(list)
 
         if self.pk is not None:
-            # Timer cannot be altered if running.
+            # Timer cannot be altered if running (state == start).
             # We can't block prestart as there's no way to exit prestart.
-            running = self.running
+            running = self.start
             if not running:
                 # Might be different if updated before form submission.
                 db_ver = self.__class__.objects.get(pk=self.pk)
-                running = db_ver.running
+                running = db_ver.start
             if running:
                 errs[NON_FIELD_ERRORS].append(ValidationError(
                     _("Timer is running, cannot change any information."),
@@ -360,7 +370,7 @@ class TimerProfile(models.Model):
     def clean(self):
         errs = defaultdict(list)
 
-        if any(timer.running for timer in self.timers.all()):
+        if any(timer.start for timer in self.timers.all()):
             errs[NON_FIELD_ERRORS].append(ValueError(
                 _("One or more linked timers are running, cannot change any "
                   "information."),
@@ -416,7 +426,7 @@ class TimerStage(models.Model):
         errs = defaultdict(list)
 
         if (self.profile is not None
-                and any(timer.running for timer in self.profile.timers.all())):
+                and any(timer.start for timer in self.profile.timers.all())):
             errs[NON_FIELD_ERRORS].append(ValueError(
                 _("One or more linked timers are running, cannot change any "
                   "information."),

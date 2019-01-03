@@ -494,14 +494,12 @@ class TimerAdmin(VersionAdmin, admin.ModelAdmin):
     def state(self, timer):
         states = {
             'prestart': _('Pre-Start'),
-            'running': _('Running'),
-            'finished': _('Stopped'),
-            'aborted': _('Failed'),
+            'start': _('Running'),
+            'end': _('Stopped'),
+            'abort': _('Failed'),
+            None: None,  # Default if no state (shouldn't happen).
         }
-        for s, name in states.items():
-            if getattr(timer, s):
-                return name
-        return None  # Fallback if no state is active (shouldn't happen).
+        return states[timer.state]
     state.short_description = _("timer state")
 
     def get_urls(self):
