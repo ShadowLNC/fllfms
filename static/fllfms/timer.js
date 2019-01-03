@@ -16,6 +16,12 @@ class Timer {
         };
         this._profile = null;  // Schema for css and sounds based on timer state.
         this._action = null;  // Last timer action command received.
+
+        this.socket = new WebSocket("ws" + window.location.protocol.slice(4) + "//" + window.location.host + '/websocket/timercontrol/1/');  // TODO number
+        this.socket.addEventListener('open', this.socketopen.bind(this));
+        this.socket.addEventListener('message', this.socketmessage.bind(this));
+        this.socket.addEventListener('close', this.socketclose.bind(this));
+        this.socket.addEventListener('error', this.socketerror.bind(this));
     }
 
     get profile() {
@@ -125,7 +131,7 @@ class Timer {
              * A race condition could cause this to run more than once (during
              * initialisation only), but it will not have any adverse effects.
              */
-            switch (this._action.type) {
+            switch (this._action.state) {
                 case "prestart":
                     this.prestart();
                     break;
@@ -216,5 +222,48 @@ class Timer {
             display = display.toString();
         }
         this.element.textContent = display;
+    }
+
+    socketmessage(event) {
+        let data = JSON.parse(event.data);
+        // We will get either a profile, state, or match event.
+        switch (data.type) {
+            case "profile":
+                this.profile = data;
+                break;
+            case "state":
+                // Calculate the wall-clock time (usec) the action (state change) actually occurred.
+                data.timestamp = parseInt(event.timeStamp*1000);
+                if (data.elapsed != undefined) {
+                    // Typically only defined for "start" where elapsed time matters.
+                    data.timestamp -= data.elapsed;
+                }
+                this.action = data;
+                break;
+            case "match":
+                // TODO
+                break;
+            default:
+                break;
+        }
+    }
+
+    socketopen(event) {
+        console.log("opened", event);
+        // Setup the socket by subscribing to the relevant events.
+        let subs = ["profile", "state", "match"];
+        for (let subscription of subs) {
+            this.socket.send(JSON.stringify({
+                type: "subscribe",
+                channel: subscription,
+            }));
+        }
+    }
+
+    socketclose(event) {
+        console.error("Closed", event);
+    }
+    socketerror(event) {
+        console.error("Bad Socket", event);
     }
 }

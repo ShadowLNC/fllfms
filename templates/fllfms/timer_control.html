@@ -8,34 +8,8 @@
         window.addEventListener('load', () => {
             const t = new Timer(document.querySelector("#timer"));
             window.t = t;
-            t.profile = {
-                format: true,
-                duration: 10000000,
-                prestartcss: 'cream',
-                startcss: 'green',
-                startsound: 'http://www.team228.org/documents/2004/charge-1.wav',
-                startdisplay: null,
-                endcss: 'red',
-                endsound: 'http://www.team228.org/documents/2004/buzzer.wav',
-                abortsound: 'http://www.team228.org/documents/2004/fog-blast.wav',
-                stages: [
-                    {
-                        trigger: 5000000,
-                        css: 'yellow',
-                        sound: 'http://www.team228.org/documents/2004/three-bells.wav',
-                        display: null,
-                    },
-                    {
-                        trigger: 6000000,
-                        css: 'green',
-                        sound: null,
-                        display: null,
-                    }
-                ]
-            };
-            t.action = {type: "prestart", timestamp: Date.now()*1000};
             document.querySelector("#start").addEventListener('click', () => {
-                t.action = {type: "start", timestamp: Date.now()*1000};
+                t.action = {state: "start", timestamp: Date.now()*1000};
             });
         });
     </script>
