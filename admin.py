@@ -506,14 +506,16 @@ class TimerAdmin(VersionAdmin, admin.ModelAdmin):
         info = self.model._meta.app_label, self.model._meta.model_name
 
         return [
-            path('<path:object_id>/control/',
+            path('<int:object_id>/control/',
                  self.admin_site.admin_view(self.control_view),
                  name="{}_{}_control".format(*info)),
             *super().get_urls(),
         ]
 
-    def control_view(self, request, object_id) :
-        return render(request, 'fllfms/timer_control.html')
+    def control_view(self, request, object_id):
+        return render(request, 'fllfms/timer_control.html', context={
+            'object_id': object_id,
+        })
 
 
 @admin.register(TimerProfile)

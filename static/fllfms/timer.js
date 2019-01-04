@@ -1,7 +1,8 @@
 // jshint esversion: 6
 
 class Timer {
-    constructor(element) {
+    constructor(timerid, element) {
+        this.timerid = timerid;
         this.element = element;  // Timer DOM element for updating.
         this.interval = null;  // Timer redraw interval ID, if running.
 
@@ -17,11 +18,9 @@ class Timer {
         this._profile = null;  // Schema for css and sounds based on timer state.
         this._action = null;  // Last timer action command received.
 
-        this.socket = new WebSocket("ws" + window.location.protocol.slice(4) + "//" + window.location.host + '/websocket/timercontrol/1/');  // TODO number
-        this.socket.addEventListener('open', this.socketopen.bind(this));
-        this.socket.addEventListener('message', this.socketmessage.bind(this));
-        this.socket.addEventListener('close', this.socketclose.bind(this));
-        this.socket.addEventListener('error', this.socketerror.bind(this));
+        this.socket = null;
+        this.socketfailures = 0;  // Failures since last success.
+        this.mksocket();
     }
 
     get profile() {
@@ -224,6 +223,21 @@ class Timer {
         this.element.textContent = display;
     }
 
+    mksocket() {
+        if (this.socket != null && [0, 1].includes(this.socket.readyState)) {
+            // Socket exists and is either CONNECTING (0) or OPEN (1).
+            return;
+        }
+        let protocol = "ws" + window.location.protocol.slice(4) + "//";
+        // Hardcoding the path is far from ideal, but it's the easiest solution.
+        let path = "/websocket/timercontrol/" + this.timerid + "/";
+        this.socket = new WebSocket(protocol + window.location.host + path);
+        this.socket.addEventListener('open', this.socketopen.bind(this));
+        this.socket.addEventListener('message', this.socketmessage.bind(this));
+        this.socket.addEventListener('close', this.socketclose.bind(this));
+        this.socket.addEventListener('error', this.socketerror.bind(this));
+    }
+
     socketmessage(event) {
         let data = JSON.parse(event.data);
         // We will get either a profile, state, or match event.
@@ -249,7 +263,8 @@ class Timer {
     }
 
     socketopen(event) {
-        console.log("opened", event);
+        console.info("WebSocket connected.");
+        this.socketfailures = 0;  // Reset the failure count.
         // Setup the socket by subscribing to the relevant events.
         let subs = ["profile", "state", "match"];
         for (let subscription of subs) {
@@ -261,9 +276,35 @@ class Timer {
     }
 
     socketclose(event) {
-        console.error("Closed", event);
+        // 1000 is succesful closure, including page refresh. No retries required.
+        if (event.code == 1000) {
+            // NOTE: Firefox will display this in the console of the next page.
+            console.info("WebSocket closed normally (code 1000), not retrying.");
+            return;
+        }
+
+        const SOCKET_DO_NOT_REOPEN = 4999;  // As defined by FLLFMS.
+        const NO_RETRIES = [SOCKET_DO_NOT_REOPEN];
+        const MAX_FAILURES = 3;
+        let retry = ! NO_RETRIES.includes(event.code);  // Do not retry (e.g. logout).
+
+        if (retry && ++this.socketfailures <= MAX_FAILURES) {
+            console.warn(
+                "WebSocket connection lost (code " + event.code + "). " +
+                "Reconnecting... (attempt " + this.socketfailures + "/" + MAX_FAILURES + ")");
+            setTimeout(this.mksocket.bind(this), 1000);
+        } else {
+            console.error("WebSocket connection lost. Refresh page to retry.");
+            // Should probably do something here to improve UX.
+            alert("WebSocket could not connect.\n" +
+                  "Maybe your network doesn't support WebSockets?\n" +
+                  "Refresh page to try again.");
+        }
     }
+
     socketerror(event) {
-        console.error("Bad Socket", event);
+        // Log the error, might be useful for diagnostics.
+        // Not much we can do; if socket closes, we handle that insted.
+        console.error("WebSocket Error", event);
     }
 }
