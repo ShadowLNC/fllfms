@@ -1,4 +1,3 @@
-from contextlib import suppress
 from datetime import datetime, timezone
 from functools import partial
 import os.path
@@ -9,7 +8,10 @@ from channels.layers import get_channel_layer
 from channels.generic.websocket import JsonWebsocketConsumer
 from django.contrib.staticfiles.templatetags.staticfiles import static
 
-from .models import APP_STATIC_ROOT, Match, Timer, TimerProfile
+from .models import APP_STATIC_ROOT, Timer, TimerProfile
+
+
+SOCKET_DO_NOT_REOPEN = 4999
 
 
 def usec(time):
@@ -90,12 +92,15 @@ class TimerConsumer(JsonWebsocketConsumer):
         sendable(msg)
 
     @classmethod
-    def send_match(cls, match, sendable=None):
+    def send_match(cls, timer, sendable=None):
+        # It's necessary to accept the timer as the argument here, as the match
+        # may be None if the match was removed from a timer. We still need to
+        # notify that the match has been removed, and if the match itself is
+        # edited, then this can simply be called with the match's timer.
+
         if sendable is None:
-            if match.timer is None:
-                return  # No timer to update.
-            sendable = cls.group_sendable(
-                cls.getgroup(match.timer.pk, "match"))
+            sendable = cls.group_sendable(cls.getgroup(timer.pk, "match"))
+        match = timer.match  # TODO do we need to catch Match.DoesNotExist?
 
         if match is None:
             sendable({
@@ -119,6 +124,13 @@ class TimerConsumer(JsonWebsocketConsumer):
                 for player in match.players.select_related(
                     'team').order_by('station')
             ]
+        })
+
+    @classmethod
+    def terminate_group(cls, sendable):
+        sendable({
+            'type': "websocket.disconnect",
+            'code': SOCKET_DO_NOT_REOPEN
         })
 
     def __init__(self, *args, **kwargs):
@@ -166,8 +178,7 @@ class TimerConsumer(JsonWebsocketConsumer):
                 elif data['channel'] == "state":
                     obj = Timer.objects.get(pk=self.object_id)
                 elif data['channel'] == "match":
-                    with suppress(Match.DoesNotExist):
-                        obj = Match.objects.get(timer__pk=self.object_id)
+                    obj = Timer.objects.get(pk=self.object_id)
 
                 # Don't send if there's nothing to send.
                 # Timer.match can be None, but others can't.
