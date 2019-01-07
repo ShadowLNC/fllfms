@@ -276,24 +276,27 @@ class Timer {
     }
 
     socketclose(event) {
-        // 1000 is succesful closure, including page refresh. No retries required.
-        if (event.code == 1000) {
-            // NOTE: Firefox will display this in the console of the next page.
-            console.info("WebSocket closed normally (code 1000), not retrying.");
-            return;
-        }
-
+        const SOCKET_NORMAL_CLOSE = 1000;  // Includes page refresh on Firefox.
         const SOCKET_DO_NOT_REOPEN = 4999;  // As defined by FLLFMS.
-        const NO_RETRIES = [SOCKET_DO_NOT_REOPEN];
+        const NO_RETRIES = [];  // Any other codes that we shouldn't retry.
         const MAX_FAILURES = 3;
         let retry = ! NO_RETRIES.includes(event.code);  // Do not retry (e.g. logout).
 
-        if (retry && ++this.socketfailures <= MAX_FAILURES) {
+        if (event.code == SOCKET_NORMAL_CLOSE) {
+            // NOTE: Firefox will display this in the console of the next page.
+            console.info("WebSocket closed normally (code 1000), not retrying.");
+        }
+        else if (event.code == SOCKET_DO_NOT_REOPEN) {
+            console.error("WebSocket forcibly closed by server (DO_NOT_REOPEN). Reloading...");
+            window.location.reload();
+        }
+        else if (retry && ++this.socketfailures <= MAX_FAILURES) {
             console.warn(
                 "WebSocket connection lost (code " + event.code + "). " +
                 "Reconnecting... (attempt " + this.socketfailures + "/" + MAX_FAILURES + ")");
             setTimeout(this.mksocket.bind(this), 1000);
-        } else {
+        }
+        else {
             console.error("WebSocket connection lost. Refresh page to retry.");
             // Should probably do something here to improve UX.
             alert("WebSocket could not connect.\n" +

@@ -1,3 +1,4 @@
+from contextlib import suppress
 from datetime import datetime, timezone
 from functools import partial
 import os.path
@@ -129,7 +130,7 @@ class TimerConsumer(JsonWebsocketConsumer):
     @classmethod
     def terminate_group(cls, sendable):
         sendable({
-            'type': "websocket.disconnect",
+            'type': "close",
             'code': SOCKET_DO_NOT_REOPEN
         })
 
@@ -184,3 +185,8 @@ class TimerConsumer(JsonWebsocketConsumer):
                 # Timer.match can be None, but others can't.
                 if obj is not None or data['channel'] == "match":
                     func(obj, sendable=async_to_sync(self.dispatch))
+
+    def close(self, code=None):
+        with suppress(TypeError, KeyError):
+            code = code['code']  # In case this is a dispatched event.
+        super().close(code)
