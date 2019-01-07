@@ -76,8 +76,6 @@ _timer_signal_cache = TimerSignalCache()
 @receiver(post_save, sender=TimerProfile, dispatch_uid="profile_post_save")
 def profile_post_save(sender, instance, created, raw, using, update_fields,
                       **kwargs):
-    if not created and update_fields is None:
-        raise ValueError("Could not get fields")
     if not created:
         TimerConsumer.send_profile(instance)
 
@@ -85,11 +83,11 @@ def profile_post_save(sender, instance, created, raw, using, update_fields,
 @receiver(post_save, sender=Match, dispatch_uid="match_post_save")
 def match_post_save(sender, instance, created, raw, using, update_fields,
                     **kwargs):
-    if not created and update_fields is None:
-        raise ValueError("Could not get fields")
-    # TODO catch Timer.DoesNotExist?
-    if not created and instance.timer is not None:
-        TimerConsumer.send_match(instance.timer)
+    if not created:
+        # We don't want to send an event if there's no timer.
+        # If no timer, no event will be sent due to Timer.DoesNotExist.
+        with suppress(Timer.DoesNotExist):
+            TimerConsumer.send_match(instance.timer)
 
 
 # We need to close sockets where the timer has been deleted. Note that it's not

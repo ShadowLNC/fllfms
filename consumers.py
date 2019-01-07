@@ -100,7 +100,7 @@ class TimerConsumer(JsonWebsocketConsumer):
 
         if sendable is None:
             sendable = cls.group_sendable(cls.getgroup(timer.pk, "match"))
-        match = timer.match  # TODO do we need to catch Match.DoesNotExist?
+        match = timer.match  # May be None.
 
         if match is None:
             sendable({
