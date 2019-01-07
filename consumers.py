@@ -4,10 +4,13 @@ from functools import partial
 import os.path
 
 from asgiref.sync import async_to_sync
+from channels.auth import get_user
 from channels.db import database_sync_to_async
 from channels.layers import get_channel_layer
 from channels.generic.websocket import JsonWebsocketConsumer
+from django.contrib.admin.utils import unquote
 from django.contrib.staticfiles.templatetags.staticfiles import static
+from django.core.exceptions import ValidationError
 
 from .models import APP_STATIC_ROOT, Timer, TimerProfile
 
@@ -138,8 +141,35 @@ class TimerConsumer(JsonWebsocketConsumer):
         self.groups = set()
         super().__init__(*args, **kwargs)
 
+    def validate_session(self):
+        # NOTE: Keep these permissions checks synchronised with admin.py.
+        user = async_to_sync(get_user)(self.scope)
+
+        # Objects to check permissions against, but supplying the object gets
+        # an empty set when using django.contrib.auth.backends.ModelBackend.
+        # Timer.objects.get(pk=self.object_id))
+        # TimerProfile.objects.get(timers__pk=self.object_id))
+
+        # view_team, view_match not required as it's public information.
+        # view_timer superseded by change_timer
+        if (user.is_authenticated
+                and user.is_staff
+                and user.has_perm("fllfms.change_timer")
+                and user.has_perm("fllfms.view_timerprofile")):
+            return True
+        else:
+            self.close(code=SOCKET_DO_NOT_REOPEN)
+            return False
+
     @database_sync_to_async
     def dispatch(self, message):
+        # Validate before sending anything. If not valid, we won't dispatch
+        # the message, and validate_session will also drop the socket.
+        # Do not validate certain messages as they are for setup/teardown.
+        bypass = ['websocket.connect', 'websocket.disconnect', 'close']
+        if message.get('type') not in bypass and not self.validate_session():
+            return
+
         # All our subscription events send as json, so no handler needed.
         if message.get('type') in self.valid_subscriptions:
             self.send_json(message)
@@ -157,15 +187,24 @@ class TimerConsumer(JsonWebsocketConsumer):
         self.groups.discard(group)
 
     def connect(self):
-        # TODO auth & validate.
-        self.object_id = self.scope['url_route']['kwargs']['object_id']
-        self.accept()
+        # First, validate that the timer exists.
+        self.object_id = unquote(
+            self.scope['url_route']['kwargs']['object_id'])
+        try:
+            Timer.objects.get(pk=self.object_id)
+        except (Timer.DoesNotExist, ValidationError, ValueError):
+            self.close(SOCKET_DO_NOT_REOPEN)
+
+        if self.validate_session():  # Validate upon connection.
+            self.accept()
 
     def disconnect(self, close_code):
         for group in list(self.groups):
             self.leave(group)
 
     def receive_json(self, data):
+        self.validate_session()  # Validate on each and every request.
+
         if data['type'] == "subscribe":
             if data['channel'] in self.valid_subscriptions:
                 self.join(self.getgroup(self.object_id, data['channel']))

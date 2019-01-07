@@ -3,9 +3,10 @@ from base64 import b64decode, b64encode
 
 from django import forms
 from django.conf import settings
-from django.core.exceptions import ValidationError
 from django.contrib import admin, messages
+from django.contrib.admin.utils import unquote
 from django.contrib.admin.widgets import AutocompleteSelect
+from django.core.exceptions import PermissionDenied, ValidationError
 from django.db import models, transaction
 from django.db.models import Q
 from django.forms.widgets import RadioSelect
@@ -506,15 +507,28 @@ class TimerAdmin(VersionAdmin, admin.ModelAdmin):
         info = self.model._meta.app_label, self.model._meta.model_name
 
         return [
-            path('<int:object_id>/control/',
+            path('<path:object_id>/control/',
                  self.admin_site.admin_view(self.control_view),
                  name="{}_{}_control".format(*info)),
             *super().get_urls(),
         ]
 
     def control_view(self, request, object_id):
+        # Check if exists (404) first, then permissions (403).
+        obj = self.get_object(request, unquote(object_id))
+        if obj is None:
+            # Later: when moving this function to views.py, add 404/403 args.
+            return self._get_obj_does_not_exist_redirect(
+                request, self.model._meta, object_id)
+
+        # NOTE: Keep synchronised with permissions checks in consumers.py.
+        profile_admin = self.admin_site._registry.get(TimerProfile)
+        if not (self.has_change_permission(request, obj)
+                and profile_admin.has_view_permission(request, obj.profile)):
+            raise PermissionDenied
+
         return render(request, 'fllfms/timer_control.html', context={
-            'object_id': object_id,
+            'object_id': object_id,  # Already quoted as passed argument.
         })
 
 
