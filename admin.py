@@ -483,16 +483,14 @@ class TimerStageAdmin(admin.TabularInline):
 
 @admin.register(Timer)
 class TimerAdmin(VersionAdmin, admin.ModelAdmin):
-    list_display = ('id', 'name', 'match', 'state', 'profile',)
+    list_display = ('id', 'name', 'match', 'statestring', 'profile',)
     list_display_links = list_display[:2]
-    list_editable = ('match',)
-    fields = list_display
-    readonly_fields = ('id', 'state',)
+    fields = ('id', 'name', 'profile', 'statestring', 'match',)
     autocomplete_fields = ('match',)
 
     ordering = ('name', 'pk',)
 
-    def state(self, timer):
+    def statestring(self, timer):
         states = {
             TIMERSTATES.PRESTART: _('Pre-Start'),
             TIMERSTATES.START: _('Running'),
@@ -500,7 +498,7 @@ class TimerAdmin(VersionAdmin, admin.ModelAdmin):
             TIMERSTATES.ABORT: _('Failed'),
         }
         return states.get(timer.state)
-    state.short_description = _("timer state")
+    statestring.short_description = _("timer state")
 
     def get_urls(self):
         info = self.model._meta.app_label, self.model._meta.model_name
@@ -511,6 +509,12 @@ class TimerAdmin(VersionAdmin, admin.ModelAdmin):
                  name="{}_{}_control".format(*info)),
             *super().get_urls(),
         ]
+
+    def get_readonly_fields(self, request, obj=None):
+        fields = ['id', 'statestring', ]
+        if obj is not None and obj.state == TIMERSTATES.START:
+            fields.extend(['profile', 'match', ])
+        return fields
 
     def control_view(self, request, object_id):
         # Check if exists (404) first, then permissions (403).

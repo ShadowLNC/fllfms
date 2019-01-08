@@ -39,7 +39,10 @@ class TimerSignalCache:
         if not instance.pk:
             return
         with suppress(Timer.DoesNotExist):
-            self.oldcopies[instance.pk] = Timer.objects.get(pk=instance.pk)
+            # Use values() to prevent infinite recursion as Timer.__init__
+            # calls save().
+            self.oldcopies[instance.pk] = Timer.objects.values().get(
+                pk=instance.pk)
 
     def timer_post_save(self, sender, instance, created, raw, using,
                         update_fields, **kwargs):
@@ -50,12 +53,14 @@ class TimerSignalCache:
 
         old = self.oldcopies[instance.pk]
         del self.oldcopies[instance.pk]
+        # Get values() to match data with pre_save.
+        new = Timer.objects.values().get(pk=instance.pk)
 
         def changed(attr):
-            return getattr(old, attr) != getattr(instance, attr)
+            return old.get(attr) != new.get(attr)
 
-        if any(changed(i) for i in ['starttime', 'active']):
-            # The timer state was changed.
+        if any(changed(i) for i in ['starttime', 'state']):
+            # starttime also affects state/elapsed, must also be checked.
             TimerConsumer.send_state(instance)
 
         if changed('profile'):

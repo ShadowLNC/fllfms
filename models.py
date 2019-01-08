@@ -323,6 +323,8 @@ class Timer(models.Model):
         if (self.state == TIMERSTATES.START
                 and self.elapsed > self.profile.duration):
             # Stop the timer if it has been running longer than its duration.
+            # WARNING: Don't instantiate in pre/post_save signals, or infinite
+            # recursion may ensue.
             self.state = TIMERSTATES.END
             self.save()
 
