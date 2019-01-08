@@ -8,9 +8,11 @@
         window.addEventListener('load', () => {
             const t = new Timer(document.querySelector("#timerid").value, document.querySelector("#timer"));
             window.t = t;
-            document.querySelector("#start").addEventListener('click', () => {
-                t.action = {state: 1, timestamp: Date.now()*1000};
-            });
+            document.querySelector("#start").addEventListener('click', () => { t.requestaction(1); });
+            document.querySelector("#abort").addEventListener('click', () => { t.requestaction(3); });
+            document.querySelector("#prestart").addEventListener('click', () => { t.requestaction(0); });
+            document.querySelector("#matchprev").addEventListener('click', () => { t.requestmatch(false); });
+            document.querySelector("#matchnext").addEventListener('click', () => { t.requestmatch(true); });
         });
     </script>
 </head>
@@ -29,7 +31,8 @@
     <div id="timer">0</div>
 
     <button id="start">Start</button>
-    <button id="stop">Stop</button>
+    <button id="abort">Stop</button>
+    <button id="prestart">Reload</button>
 
 </body>
 </html>

@@ -25,6 +25,7 @@ class Timer {
         this._profile = null;  // Schema for css and sounds based on timer state.
         this._action = null;  // Last timer action command received.
 
+        this.msgqueue = [];
         this.socket = null;
         this.socketfailures = 0;  // Failures since last success.
         this.mksocket();
@@ -157,7 +158,10 @@ class Timer {
     }
 
     get elapsed() {
-        return Date.now()*1000 - this.action.timestamp;
+        // Rather than Date.now(), we use (new Event(null)).timeStamp, since
+        // Event.timeStamp could be either DOMHighResTimeStamp or Date (browser dependent).
+        // If DOMHighResTimeStamp, this appears to be the simplest way to get it.
+        return (new Event(null)).timeStamp*1000 - this.action.timestamp;
     }
 
     prestart() {
@@ -272,13 +276,21 @@ class Timer {
     socketopen(event) {
         console.info("WebSocket connected.");
         this.socketfailures = 0;  // Reset the failure count.
+        let queue = this.msgqueue;
+        this.msgqueue = [];  // Clear queue.
+
         // Setup the socket by subscribing to the relevant events.
         let subs = ["profile", "state", "match"];
         for (let subscription of subs) {
-            this.socket.send(JSON.stringify({
+            this.request({
                 type: "subscribe",
                 channel: subscription,
-            }));
+            });
+        }
+
+        // Dispatch any pending requests.
+        for (let msg of queue) {
+            this.request(msg);
         }
     }
 
@@ -317,4 +329,30 @@ class Timer {
         // Not much we can do; if socket closes, we handle that insted.
         console.error("WebSocket Error", event);
     }
+
+    request(payload) {
+        // Send JSON data to the socket, if readyState == 1 (open).
+        if (this.socket != null && this.socket.readyState == 1) {
+            this.socket.send(JSON.stringify(payload));
+        } else {
+            this.msgqueue.push(payload);
+        }
+    }
+
+    requestmatch(next=true) {
+        this.request({
+            type: "set",
+            channel: "match",
+            next: next,
+        });
+    }
+
+    requestaction(action) {
+        this.request({
+            type: "set",
+            channel: "state",
+            action: action,
+        })
+    }
+
 }

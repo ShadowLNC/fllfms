@@ -12,7 +12,7 @@ from django.contrib.admin.utils import unquote
 from django.contrib.staticfiles.templatetags.staticfiles import static
 from django.core.exceptions import ValidationError
 
-from .models import APP_STATIC_ROOT, Timer, TimerProfile, TIMERSTATES
+from .models import APP_STATIC_ROOT, Match, Timer, TimerProfile, TIMERSTATES
 
 
 SOCKET_DO_NOT_REOPEN = 4999
@@ -204,25 +204,58 @@ class TimerConsumer(JsonWebsocketConsumer):
     def receive_json(self, data):
         self.validate_session()  # Validate on each and every request.
 
-        if data['type'] == "subscribe":
-            if data['channel'] in self.valid_subscriptions:
-                self.join(self.getgroup(self.object_id, data['channel']))
+        if data.get('type') == "subscribe":
+            if data.get('channel') in self.valid_subscriptions:
+                self.join(self.getgroup(self.object_id, data.get('channel')))
 
                 # Now trigger a first-time-send of the data.
                 # Get the appropriate function and object to apply to it.
-                func = getattr(self, "send_" + data['channel'])
+                func = getattr(self, "send_" + data.get('channel'))
                 obj = None
-                if data['channel'] == "profile":
+                if data.get('channel') == "profile":
                     obj = TimerProfile.objects.get(timers__pk=self.object_id)
-                elif data['channel'] == "state":
+                elif data.get('channel') == "state":
                     obj = Timer.objects.get(pk=self.object_id)
-                elif data['channel'] == "match":
+                elif data.get('channel') == "match":
                     obj = Timer.objects.get(pk=self.object_id)
 
                 # Don't send if there's nothing to send.
                 # Timer.match can be None, but others can't.
-                if obj is not None or data['channel'] == "match":
+                if obj is not None or data.get('channel') == "match":
                     func(obj, sendable=async_to_sync(self.dispatch))
+
+        if data.get('type') == "set":
+            timer = Timer.objects.get(pk=self.object_id)
+
+            if data.get('channel') == "state":
+                # List of allowed new states based on a timer's current state.
+                allowed_transitions = {
+                    TIMERSTATES.PRESTART: [TIMERSTATES.START, ],
+                    # No end state here as that's not user-controlled.
+                    TIMERSTATES.START: [TIMERSTATES.ABORT, ],
+                    TIMERSTATES.END: [TIMERSTATES.PRESTART, ],
+                    TIMERSTATES.ABORT: [TIMERSTATES.PRESTART, ],
+                }.get(timer.state, [])
+
+                # Set state if allowed, and any extra data based on new state.
+                if data.get('action') in allowed_transitions:
+                    timer.state = data.get('action')
+                    if timer.state == TIMERSTATES.START:
+                        timer.starttime = datetime.now(timezone.utc)
+
+            if (data.get('channel') == "match"
+                    and timer.state != TIMERSTATES.START
+                    and timer.match is not None):
+                # Either next or prev.
+                filter = "number__" + ("gt" if data.get('next', 1) else "lt")
+                match = Match.objects.filter(**{
+                    'tournament': timer.match.tournament,
+                    filter: timer.match.number
+                }).first()
+                if match is not None:
+                    timer.match = match
+
+            timer.save()
 
     def close(self, code=None):
         with suppress(TypeError, KeyError):
