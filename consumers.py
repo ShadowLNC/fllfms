@@ -12,7 +12,7 @@ from django.contrib.admin.utils import unquote
 from django.contrib.staticfiles.templatetags.staticfiles import static
 from django.core.exceptions import ValidationError
 
-from .models import APP_STATIC_ROOT, Timer, TimerProfile
+from .models import APP_STATIC_ROOT, Timer, TimerProfile, TIMERSTATES
 
 
 SOCKET_DO_NOT_REOPEN = 4999
@@ -89,9 +89,8 @@ class TimerConsumer(JsonWebsocketConsumer):
             'type': "state",
             'state': timer.state,
         }
-        if timer.start:
-            msg['elapsed'] = usec(
-                datetime.utcnow(timezone.utc) - timer.starttime)
+        if timer.state == TIMERSTATES.START:
+            msg['elapsed'] = usec(timer.elapsed)
 
         sendable(msg)
 

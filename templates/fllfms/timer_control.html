@@ -9,7 +9,7 @@
             const t = new Timer(document.querySelector("#timerid").value, document.querySelector("#timer"));
             window.t = t;
             document.querySelector("#start").addEventListener('click', () => {
-                t.action = {state: "start", timestamp: Date.now()*1000};
+                t.action = {state: 1, timestamp: Date.now()*1000};
             });
         });
     </script>

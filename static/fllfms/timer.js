@@ -1,4 +1,11 @@
 // jshint esversion: 6
+const TIMERSTATES = {
+    // NOTE: Keep this synchronised with models.py.
+    PRESTART: 0,
+    START: 1,
+    END: 2,
+    ABORT: 3,
+};
 
 class Timer {
     constructor(timerid, element) {
@@ -131,16 +138,16 @@ class Timer {
              * initialisation only), but it will not have any adverse effects.
              */
             switch (this._action.state) {
-                case "prestart":
+                case TIMERSTATES.PRESTART:
                     this.prestart();
                     break;
-                case "start":
+                case TIMERSTATES.START:
                     this.start();
                     break;
-                case "end":
+                case TIMERSTATES.END:
                     this.end();
                     break;
-                case "abort":
+                case TIMERSTATES.ABORT:
                 default:
                     // If an unknown state is encountered, we also abort.
                     this.abort();

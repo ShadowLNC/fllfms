@@ -19,7 +19,7 @@ from reversion.admin import VersionAdmin
 from reversion.models import Version
 
 from .models import (Team, Match, Player, Scoresheet,
-                     Timer, TimerProfile, TimerStage)
+                     Timer, TimerProfile, TimerStage, TIMERSTATES,)
 
 
 class RadioRow(RadioSelect):
@@ -494,13 +494,12 @@ class TimerAdmin(VersionAdmin, admin.ModelAdmin):
 
     def state(self, timer):
         states = {
-            'prestart': _('Pre-Start'),
-            'start': _('Running'),
-            'end': _('Stopped'),
-            'abort': _('Failed'),
-            None: None,  # Default if no state (shouldn't happen).
+            TIMERSTATES.PRESTART: _('Pre-Start'),
+            TIMERSTATES.START: _('Running'),
+            TIMERSTATES.END: _('Stopped'),
+            TIMERSTATES.ABORT: _('Failed'),
         }
-        return states[timer.state]
+        return states.get(timer.state)
     state.short_description = _("timer state")
 
     def get_urls(self):

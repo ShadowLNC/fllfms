@@ -1,6 +1,7 @@
-import os.path
-from collections import defaultdict
+from collections import defaultdict, OrderedDict
+from datetime import datetime, timezone
 from importlib import import_module
+import os.path
 
 from django.conf import settings
 from django.db import models
@@ -9,6 +10,32 @@ from django.core.validators import (
     MinValueValidator, MaxValueValidator, RegexValidator)
 from django.core.exceptions import ValidationError, NON_FIELD_ERRORS
 from django.utils.translation import gettext_lazy as _
+
+
+class AttrDict(OrderedDict):
+    # Enums for Django. Must be sorted to serialise, hence OrderedDict.
+    # Also retains declaration order for <select> elements in admin etc.
+    def __getattr__(self, item):
+        return self[item]  # __getattr__ is called when __getattribute__ fails.
+
+    def choices(self):
+        # Not a property so as to differentiate between an element.
+        return [(v, k) for k, v in self.items()]
+
+    @classmethod
+    def fromiter(cls, *data, start=0):
+        return cls([(k, v) for v, k in enumerate(data, start)])
+
+
+# Timer states: prestart (primed), start (running), end (finished), abort.
+# States: prestart (initial) > start > end/abort > prestart.
+# NOTE: Keep this synchronised with timer.js.
+TIMERSTATES = AttrDict([
+    ("PRESTART", 0),
+    ("START", 1),
+    ("END", 2),
+    ("ABORT", 3),
+])
 
 
 Scoresheet = import_module(settings.FLLFMS.get(
@@ -258,14 +285,6 @@ class Timer(models.Model):
         blank=True, max_length=100, verbose_name=_("name (optional)"),
         help_text=_("Only visible in admin."))
 
-    # See the properties below for the meaning of these values.
-    # Technically blank=True unnecessary as editable=False for starttime.
-    starttime = models.DateTimeField(auto_now=False, auto_now_add=False,
-                                     editable=False, blank=True, null=True,
-                                     verbose_name=_("start time"))
-    active = models.BooleanField(editable=False, default=True,
-                                 verbose_name=_("active (pre-start/running)"))
-
     profile = models.ForeignKey('TimerProfile', on_delete=models.PROTECT,
                                 related_name="timers",
                                 verbose_name=_("timing profile"))
@@ -278,31 +297,34 @@ class Timer(models.Model):
                                  blank=True, null=True, related_name="timer",
                                  verbose_name=_("current match"))
 
-    # Timer states: prestart (primed), start (running), end (finished), abort.
-    # States: prestart (initial) > start > end/abort > prestart.
-    @property
-    def prestart(self):
-        return self.starttime is None and self.active
+    starttime = models.DateTimeField(
+        auto_now=False, auto_now_add=False, editable=False,
+        default=datetime.fromtimestamp(0, timezone.utc),
+        verbose_name=_("start time"),
+        help_text=_("Only applicable if running."))
+    state = models.PositiveSmallIntegerField(
+        editable=False, default=TIMERSTATES.PRESTART,
+        choices=TIMERSTATES.choices(), verbose_name=_("timer state"))
 
     @property
-    def start(self):
-        return self.starttime is not None and self.active
+    def elapsed(self):
+        # Only applicable if running.
+        return datetime.now(timezone.utc) - self.starttime
 
-    @property
-    def end(self):
-        return self.starttime is not None and not self.active
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
 
-    @property
-    def abort(self):
-        return self.starttime is None and not self.active
-
-    @property
-    def state(self):
-        possible = ['prestart', 'start', 'end', 'abort']
-        for i in possible:
-            if getattr(self, i):
-                return i
-        return None  # Default.
+        # Since self.profile will require an additional database query, we
+        # could override the model's manager to always get select_related(),
+        # but it's not checked unless the timer is running (uncommon case). In
+        # order to make the common case fast, we should avoid the JOIN query if
+        # the timer isn't running, and therefore not override the manager.
+        # (The JOIN cost may be a better option if it's a negligible increase.)
+        if (self.state == TIMERSTATES.START
+                and self.elapsed > self.profile.duration):
+            # Stop the timer if it has been running longer than its duration.
+            self.state = TIMERSTATES.END
+            self.save()
 
     def clean(self):
         errs = defaultdict(list)
@@ -310,11 +332,11 @@ class Timer(models.Model):
         if self.pk is not None:
             # Timer cannot be altered if running (state == start).
             # We can't block prestart as there's no way to exit prestart.
-            running = self.start
+            running = self.state == TIMERSTATES.START
             if not running:
                 # Might be different if updated before form submission.
                 db_ver = self.__class__.objects.get(pk=self.pk)
-                running = db_ver.start
+                running = db_ver.state == TIMERSTATES.START
             if running:
                 errs[NON_FIELD_ERRORS].append(ValidationError(
                     _("Timer is running, cannot change any information."),
@@ -336,6 +358,13 @@ class Timer(models.Model):
     class Meta:
         verbose_name = _("timer")
         verbose_name_plural = _("timers")
+
+        constraints = [
+            models.CheckConstraint(
+                # Django can't deconstruct dict.values(), must cast to list().
+                check=Q(state__in=list(TIMERSTATES.values())),
+                name="state_choices"),
+        ]
 
 
 class TimerProfile(models.Model):
@@ -370,7 +399,7 @@ class TimerProfile(models.Model):
     def clean(self):
         errs = defaultdict(list)
 
-        if any(timer.start for timer in self.timers.all()):
+        if any(t.state == TIMERSTATES.START for t in self.timers.all()):
             errs[NON_FIELD_ERRORS].append(ValueError(
                 _("One or more linked timers are running, cannot change any "
                   "information."),
@@ -450,6 +479,8 @@ class TimerStage(models.Model):
     class Meta:
         verbose_name = _("timing stage")
         verbose_name_plural = _("timing stages")
+
+        ordering = ('trigger', 'pk',)  # Always used, both admin and consumer.
 
         constraints = [
             models.CheckConstraint(check=Q(css__regex=CSSREGEX),
