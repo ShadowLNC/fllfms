@@ -1,2 +1,4 @@
 __pycache__/
 migrations/
+# Safeguard; this folder shouldn't actually be in use.
+packaging/djangoproject/.secret_key
