@@ -1,3 +1,4 @@
+from contextlib import suppress
 import os
 import subprocess
 import sys
@@ -15,6 +16,10 @@ os.chdir(INSTALL_ROOT)
 
 # ##### STAGE 1: INSTALL DEPENDENCIES ##### #
 
+
+# If the wheels directory does not exist, pip will complain, so prevent that.
+with suppress(FileExistsError):
+    os.mkdir("wheels")
 
 # Install dependencies, no upgrades, and use wheels if available. This means
 # there will be no need for network access on a platform-specific build.
