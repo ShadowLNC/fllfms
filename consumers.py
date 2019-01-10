@@ -50,6 +50,9 @@ class TimerConsumer(JsonWebsocketConsumer):
                     cls.group_sendable(cls.getgroup(timer, "profile"))
 
         def as_static(path):
+            if not path:
+                # Empty string in the database, but in JSON we use null.
+                return None
             return static(os.path.relpath(path, APP_STATIC_ROOT))
 
         sendable({
