@@ -10,7 +10,7 @@ import shutil
 # Move to the root of the installation. This file is in the app directory.
 APP_ROOT = os.path.dirname(os.path.abspath(__file__))
 INSTALL_ROOT = os.path.dirname(APP_ROOT)
-PACKAGING_ROOT = os.path.join(APP_ROOT, "packaging")
+PACKAGING_ROOT = os.path.join(APP_ROOT, "extras")
 os.chdir(INSTALL_ROOT)
 
 
