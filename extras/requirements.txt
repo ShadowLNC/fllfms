@@ -1,7 +1,7 @@
 # Python Requirements
 
 # TODO Change this to django>=2.2 when released (target April 2019)
--e git+https://github.com/django/django#egg=django
+django >= 2.2a1
 channels
 tzlocal
 
