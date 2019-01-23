@@ -15,7 +15,8 @@ from tzlocal import get_localzone
 from django.core.management.utils import get_random_secret_key
 
 # Build paths inside the project like this: os.path.join(BASE_DIR, ...)
-BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.dirname(
+    os.path.abspath(__file__))))
 
 FLLFMS = {
     'SCORESHEET': 'fllfms.scoresheets.intoorbit2018',
@@ -59,16 +60,15 @@ FLLFMS = {
 
 # SECURITY WARNING: keep the secret key used in production secret!
 # NOTE: The filepath needs to be untracked by .gitignore.
-SECRET_KEY_FILE = os.path.join(
-    os.path.dirname(os.path.abspath(__file__)), ".secret_key")
-
+keyfile = os.path.join(BASE_DIR, ".secret_key")
 try:
-    with open(SECRET_KEY_FILE) as f:
+    # Read from the file if it exists.
+    with open(keyfile) as f:
         SECRET_KEY = f.read()
-
 except FileNotFoundError:
+    # Else generate a key and create the file using that key.
     SECRET_KEY = get_random_secret_key()
-    with open(SECRET_KEY_FILE, 'w') as f:
+    with open(keyfile, 'w') as f:
         f.write(SECRET_KEY)
 
 # SECURITY WARNING: don't run with debug turned on in production!
@@ -105,7 +105,7 @@ MIDDLEWARE = [
     'reversion.middleware.RevisionMiddleware',
 ]
 
-ROOT_URLCONF = 'djangoproject.urls'
+ROOT_URLCONF = 'fllfms.djangoproject.urls'
 
 TEMPLATES = [
     {
@@ -123,8 +123,8 @@ TEMPLATES = [
     },
 ]
 
-ASGI_APPLICATION = 'djangoproject.routing.application'
-WSGI_APPLICATION = 'djangoproject.wsgi.application'
+ASGI_APPLICATION = 'fllfms.djangoproject.routing.application'
+WSGI_APPLICATION = 'fllfms.djangoproject.wsgi.application'
 
 CHANNEL_LAYERS = {
     'default': {
