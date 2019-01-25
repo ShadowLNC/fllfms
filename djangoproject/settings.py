@@ -72,7 +72,7 @@ except FileNotFoundError:
         f.write(SECRET_KEY)
 
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = False
+DEBUG = True
 
 # SECURITY WARNING: wildcards allow websockets from any website, but we don't
 #                   know your IP. Besides, you might be using a reverse proxy.

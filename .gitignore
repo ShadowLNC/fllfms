@@ -1,2 +1,5 @@
 __pycache__/
 migrations/
+
+build/
+python/
