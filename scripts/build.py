@@ -15,14 +15,17 @@ For the embedded copy of Python, ensure the following:
     -   The copy must be self contained (not require anything outside itself)
 
     -   The Python version must be the same as your current environment
+        (Due to bytecode and compiled dependencies)
     -   Sqlite must be version 3.26+ (on Windows, you can just replace the DLL)
+        (This should be fixed in Python 3.7.3, see Python bug #35360.)
     -   If a ._pth file is present, it must `import site` to allow .pth files
+        (Required to enable pywin32 and zope.interface .pth files.)
 
 It will be copied to a directory named `lib` in the build root.
 Packages will be preinstalled to the copy of the `lib` directory.
 
-Platform scripts (wrappers to userscripts and common Django commands, etc.) are
-provided for the build, and will also be placed in the build root.
+Platform scripts (wrappers to Python scripts and common Django commands, etc.)
+will also be placed in the build root (if provided for the target platform).
 """
 
 from contextlib import suppress
@@ -35,7 +38,7 @@ import subprocess
 
 
 # Unfortunately we use a lot of directories when building. What can you do?
-APP_ROOT = dirname(abspath(__file__))
+APP_ROOT = dirname(dirname(abspath(__file__)))
 APP_PARENT = dirname(APP_ROOT)
 BUILD_DIR = join(APP_ROOT, "build")
 PYTHON_BUNDLE = join(APP_ROOT, "python")
@@ -57,52 +60,44 @@ with suppress(FileNotFoundError):
     rmtree(BUILD_DIR)
 os.makedirs(BUILD_DIR)
 
-# Include Python. If missing, then FileNotFoundError is raised.
-copytree(PYTHON_BUNDLE, BUILD_PYTHON)
+copytree(PYTHON_BUNDLE, BUILD_PYTHON)  # Include Python.
 
 # Copy the repository for a clean slate (HEAD plus staged changes).
 # No point cloning, and archive requires unpacking. Must occur after Python
-# is copied, since we live in the Python bundle (makes PYTHONPATH easier).
+# is copied, since we live in the Python bundle (simplifies PYTHONPATH).
 # WARNING: Must add "" to target path for trailing separator. See git docs.
 os.makedirs(BUILD_APP_ROOT)  # Since git checkout-index doesn't create.
 run_and_check(["git", "-C", APP_ROOT, "checkout-index", "-a", "-f",
                "--prefix=" + join(BUILD_APP_ROOT, "")])
 
-# Now install dependencies.
+# Now install dependencies. (We use the Python root to simplify PYTHONPATH).
 # Vendor packages can't be zipped as some packages may not be zip_safe.
-# Due to path issues, we must install in the Python root.
+# Leaving dist-infos in place as they contain licences which may need to remain
+# according to the licence terms. Size increase is negligible.
 requirements = join(BUILD_APP_ROOT, "requirements.txt")
 run_and_check([sys.executable, "-m", "pip", "install", "-r", requirements,
                "--compile", "--target", BUILD_PYTHON])
-# Currently leaving dist-infos in place as they contain licences which may
-# need to remain according to the licence terms.
-# Remove dist-infos, since we won't have pip on the embedded copy.
-# This will match both folders and files, which should not be a problem.
-# for infos in glob.glob(join(glob.escape(BUILD_PYTHON)), "*.dist-info"):
-#     rmtree(infos)
 
-# Setup the Django environment, so the user doesn't have to.
-# Here, we identify the Python executable from the embedded copy.
-# If we can't find it, run_and_check (subprocess) raises FileNotFoundError.
+# We use the embedded Python executable (not sys.executable) for running setup
+# scripts, this way the correct paths are set. If we can't find it,
+# run_and_check (subprocess) raises FileNotFoundError. Can't be used to install
+# packages as the embedded copy doesn't have pip (on Windows at least).
 executable = join(BUILD_PYTHON, {
     'win32': 'python.exe',
 }.get(sys.platform, 'python'))
-# The embedded copy must be used as sys.executable is in a different
-# environment with different paths. This will generate some __pycache__
-# directories, which increases file size but it's negligible.
-run_and_check([executable, "-m", "fllfms.userscripts.django", "firsttimerun"])
-os.remove(join(BUILD_PYTHON, ".secret_key"))
 
-# Platform-specific subdirectories house system-native scripts or
-# executables that serve as wrappers to invoke python scripts, including
-# those in the userscripts subdirectory. Users on platorms without native
-# wrappers can simply invoke python themselves.
+# Setup the Django environment, so the user doesn't have to.
+# Generates some __pycache__ directories (negligible size increase).
+run_and_check([executable, "-m", "fllfms.scripts.django", "firsttimerun"])
+os.remove(join(BUILD_PYTHON, ".secret_key"))  # Regenerates when user runs.
 
-# If a platform-specific subdirectory exists, its contents are extracted
-# into BUILD_DIR. See setup.py (in APP_ROOT) for more info on userscripts.
+# Platform-specific subdirectories house system-native scripts or executables
+# that serve as wrappers, so the user can simply double-click to run.
+# If a platform-specific subdirectory exists, its contents are copied into
+# BUILD_DIR, otheriwse, users can still invoke Python from the command line.
 platform = os.name
 if platform:
-    platform_path = join(APP_ROOT, "userscripts", "platforms", platform)
+    platform_path = join(BUILD_APP_ROOT, "scripts", "platforms", platform)
 
     if isdir(platform_path):
         for entry in os.scandir(platform_path):
