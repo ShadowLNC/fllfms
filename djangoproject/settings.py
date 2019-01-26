@@ -124,7 +124,7 @@ TEMPLATES = [
 ]
 
 ASGI_APPLICATION = 'fllfms.djangoproject.routing.application'
-WSGI_APPLICATION = 'fllfms.djangoproject.wsgi.application'
+WSGI_APPLICATION = 'fllfms.djangoproject.interface.wsgi'
 
 CHANNEL_LAYERS = {
     'default': {

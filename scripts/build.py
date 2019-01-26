@@ -88,7 +88,7 @@ executable = join(BUILD_PYTHON, {
 
 # Setup the Django environment, so the user doesn't have to.
 # Generates some __pycache__ directories (negligible size increase).
-run_and_check([executable, "-m", "fllfms.scripts.django", "firsttimerun"])
+run_and_check([executable, "-m", "fllfms.djangoproject", "firsttimerun"])
 os.remove(join(BUILD_PYTHON, ".secret_key"))  # Regenerates when user runs.
 
 # Platform-specific subdirectories house system-native scripts or executables
