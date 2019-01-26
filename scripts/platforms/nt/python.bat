@@ -2,4 +2,4 @@
 
 :: Filepaths may not be correct if we use pushd/popd. Minimise interference by
 :: disallowing user site packages (-s) and PYTHON* environment variables (-E).
-@"%~dp0\lib\python.exe" -s -E %*
+@start "FLLFMS" "%~dp0\lib\python.exe" -s -E %*
